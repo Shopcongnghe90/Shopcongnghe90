@@ -2,12 +2,12 @@
 {% from "_macros.html" import badge, risk %}
 {% block body %}
 {% macro tbl(rows, label) %}
-<div class="tablewrap"><table><thead><tr><th>{{ label }}</th><th>Số lần</th><th>Chi phí</th><th>Độ trễ TB</th><th>Độ trễ p95</th><th>Cost / verified success</th></tr></thead>
-<tbody>{% for r in rows %}<tr><td>{{ r.key }}</td><td>{{ r.n }}</td><td>{{ r.cost_usd|usd }}</td><td>{{ r.avg_latency_ms }} ms</td><td>{{ r.p95_latency_ms }} ms</td><td>{{ r.cost_per_verified_success|usd }}</td></tr>
+<div class="tablewrap"><table><thead><tr><th>{{ label }}</th><th>Số lần</th><th>Chi phí</th><th>Độ trễ TB</th><th>Độ trễ p95</th><th>Chi phí / thành công xác minh</th></tr></thead>
+<tbody>{% for r in rows %}<tr><td data-label="{{ label }}">{{ r.key|fam if label == 'Nhóm việc' else r.key }}</td><td data-label="Số lần">{{ r.n }}</td><td data-label="Chi phí">{{ r.cost_usd|usd }}</td><td data-label="Độ trễ TB">{{ r.avg_latency_ms }} ms</td><td data-label="Độ trễ p95">{{ r.p95_latency_ms }} ms</td><td data-label="Chi phí / thành công xác minh">{{ r.cost_per_verified_success|usd }}</td></tr>
 {% else %}<tr><td colspan="6" class="muted">Chưa có dữ liệu.</td></tr>{% endfor %}</tbody></table></div>
 {% endmacro %}
 <div class="grid"><div class="card stat"><div class="k">Hôm nay</div><div class="v">{{ today|usd }}</div></div><div class="card stat"><div class="k">Tổng (mẫu gần nhất)</div><div class="v">{{ total|usd }}</div></div></div>
-<h2>Theo model</h2>{{ tbl(by_model, 'Model') }}
+<h2>Theo mô hình</h2>{{ tbl(by_model, 'Mô hình') }}
 <h2>Theo ngày</h2>{{ tbl(by_day, 'Ngày') }}
-<h2>Theo nhóm việc</h2>{{ tbl(by_family, 'Nhóm') }}
+<h2>Theo nhóm việc</h2>{{ tbl(by_family, 'Nhóm việc') }}
 {% endblock %}

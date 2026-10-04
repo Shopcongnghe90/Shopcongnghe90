@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from zeus.contracts.models import ProviderKind
 
@@ -35,6 +35,7 @@ class Settings(BaseModel):
 
     env: Literal["dev", "test", "staging", "prod"] = "dev"
     db_dsn: str | None = None
+    db_pool_max: int = Field(default=10, ge=0, le=200)  # 0 = tắt pool (mỗi thao tác một kết nối); ZEUS_DB_POOL_MAX
     temporal_address: str = "127.0.0.1:7233"
     temporal_namespace: str = "default"
     temporal_cli: str = "/opt/zeus/bin/temporal"
@@ -70,6 +71,7 @@ class Settings(BaseModel):
         str_map = {
             "ZEUS_ENV": "env",
             "ZEUS_DB_DSN": "db_dsn",
+            "ZEUS_DB_POOL_MAX": "db_pool_max",
             "ZEUS_TEMPORAL_ADDRESS": "temporal_address",
             "ZEUS_TEMPORAL_NAMESPACE": "temporal_namespace",
             "ZEUS_TEMPORAL_CLI": "temporal_cli",

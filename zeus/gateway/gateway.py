@@ -26,6 +26,11 @@ _TRUSTED_CHANNELS = frozenset({Channel.WORKBENCH, Channel.INTERNAL, Channel.SCHE
 _MAX_TEXT = 20_000
 
 
+def task_entities(entities: dict[str, object]) -> dict[str, str]:
+    """Entity của Intent -> Task.entities (chuỗi, giới hạn số lượng/độ dài). Chỉ là DỮ LIỆU: planner phải kiểm allowlist trước khi dùng."""
+    return {str(k)[:40]: str(v)[:2000] for k, v in list(entities.items())[:16] if v is not None}
+
+
 @dataclass
 class IngestResult:
     event: Event
@@ -81,6 +86,7 @@ class EventGateway:
             event_id=saved.event_id,
             trace=task_id_trace,
             untrusted=saved.untrusted,
+            entities=task_entities(intent.entities),
         )
         task = task.model_copy(update={"workflow_id": task.task_id, "trace": task.trace.model_copy(update={"task_id": task.task_id, "workflow_id": task.task_id}) if task.trace else None})
         await self.store.put_task(task)

@@ -89,6 +89,8 @@ def mount_system_routes(app: FastAPI, settings: Settings) -> None:
 
     @app.get("/internal/system", dependencies=guard)
     async def system_info(request: Request) -> dict[str, Any]:
+        from zeus.storage.db import get_pool
+
         system = getattr(request.app.state, "system", None)
         if system is None:
             raise HTTPException(503, "system chưa được cấu hình")
@@ -97,6 +99,7 @@ def mount_system_routes(app: FastAPI, settings: Settings) -> None:
             "actions": sorted(s.name for s in system.deps.gateway.list_actions()),
             "channels": sorted(c.value for c in system.channels.adapters),
             "workers": [w.worker_id for w in await system.worker_services.registry.list()],
+            "db_pool": (lambda p: p.stats() if p is not None and not p.closed else None)(get_pool(system.dsn)),
         }
 
 
@@ -149,9 +152,16 @@ def create_server_app(settings: Settings | None = None) -> FastAPI:
         configure_logging(settings.log_level)
         client = await connect(settings.temporal_address, settings.temporal_namespace)
         system = build_system(settings, temporal_client=client)
+        pool = await system.open_pool()
         install_system(app, system)
-        log.info("ZeusVN Brain API sẵn sàng (env=%s, cloud=%s)", settings.env, settings.claude_cloud_available)
-        yield
+        log.info("ZeusVN Brain API sẵn sàng (env=%s, cloud=%s, db_pool=%s)", settings.env, settings.claude_cloud_available, pool.max_size if pool else 0)
+        try:
+            yield
+        finally:
+            if pool is not None:
+                from zeus.storage.db import close_pool
+
+                await close_pool(pool)
 
     return create_app(settings, lifespan=lifespan)
 

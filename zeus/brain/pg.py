@@ -1,4 +1,4 @@
-"""Truy cập Postgres dùng chung cho B: mỗi thao tác mở 1 kết nối async (đơn giản, đủ cho Phase 1)."""
+"""Truy cập Postgres dùng chung cho B: mỗi thao tác lấy 1 kết nối async từ ``aconnect`` (pool dùng chung khi đã mở, ADR-022)."""
 
 from __future__ import annotations
 
@@ -16,11 +16,8 @@ class PgBase:
 
     @asynccontextmanager
     async def conn(self, *, autocommit: bool = True) -> AsyncIterator[psycopg.AsyncConnection]:
-        c = await aconnect(self.dsn, autocommit=autocommit)
-        try:
+        async with await aconnect(self.dsn, autocommit=autocommit) as c:
             yield c
-        finally:
-            await c.close()
 
 
 def vec_literal(v: list[float]) -> str:

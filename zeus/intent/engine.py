@@ -45,7 +45,11 @@ _ENTITY_RULES = {
     "order_id": re.compile(r"(?:#|don hang\s*|order\s*)([A-Z0-9]{6,20}|\d{4,})", re.I),
     "domain": re.compile(r"\b([a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:vn|com|net|org|io|dev))\b", re.I),
     "url": re.compile(r"https?://\S+"),
+    # đường dẫn tuyệt đối kiểu Unix; không bắt phần sau tên miền/URL, ngày 04/10 hay "ci/cd" (tiền tố là ký tự chữ/số, ':' hoặc '/')
+    "path": re.compile(r"(?<![\w/:.])(/(?:[A-Za-z0-9_.\-]+/)*[A-Za-z0-9_.\-]+)"),
+    "sha256": re.compile(r"\b([a-fA-F0-9]{64})\b"),
 }
+_URL_TRAILING = ".,;:!?)]}>\"'"
 
 
 def _language(text: str) -> str:
@@ -59,7 +63,8 @@ def _entities(text: str) -> dict[str, Any]:
     for name, rx in _ENTITY_RULES.items():
         m = rx.search(text)
         if m:
-            out[name] = m.group(1) if m.groups() else m.group(0)
+            val = m.group(1) if m.groups() else m.group(0)
+            out[name] = val.rstrip(_URL_TRAILING) if name == "url" else (val.rstrip(".,;:") if name == "path" else val)
     return out
 
 

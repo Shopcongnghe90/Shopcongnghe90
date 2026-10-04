@@ -4,23 +4,35 @@
 {% if flash %}<div class="card {{ 'bad' if flash_bad else 'ok' }}" role="status">{{ flash }}</div>{% endif %}
 <h2>Đang chờ duyệt ({{ pending|length }})</h2>
 {% for a in pending %}
-<div class="card approval">
-  <div><strong>{{ a.summary_vi }}</strong> {{ risk(a.risk) }}</div>
+{% set rk = a.risk|val %}
+<div class="card approval approval-{{ rk }}">
+  <div class="a-head"><strong>{{ a.summary_vi }}</strong> {{ risk(a.risk) }}</div>
+  {% if rk == 'R3' %}<p class="warn-line" role="note"><strong>Cảnh báo:</strong> thao tác nghiêm trọng (tiền, xoá dữ liệu hoặc gửi ra ngoài), rất khó hoàn tác. Đọc kỹ tham số trước khi duyệt.</p>
+  {% elif rk == 'R2' %}<p class="warn-line" role="note">Thao tác ghi vào dữ liệu thật / production. Kiểm tra tham số trước khi duyệt.</p>{% endif %}
   <div class="muted">Thao tác: <code>{{ a.action.name }}</code> · task: {{ a.task_id or '—' }} · yêu cầu {{ a.requested_at|dt }}{% if a.expires_at %} · hết hạn {{ a.expires_at|dt }}{% endif %}</div>
-  <details><summary>Tham số</summary><pre>{{ a.action.args }}</pre></details>
+  <details{{ ' open' if rk in ('R2', 'R3') else '' }}><summary>Tham số</summary><pre>{{ a.action.args|pretty }}</pre></details>
   <form method="post" action="{{ prefix }}/approvals/{{ a.approval_id }}/decision" class="form">
     <input type="hidden" name="csrf_token" value="{{ csrf }}">
-    <label>Lý do (bắt buộc khi từ chối) <input name="comment" maxlength="500"></label>
-    <div class="row">
-      <button class="btn" name="decision" value="approve" type="submit">Duyệt</button>
+    <label>Lý do (bắt buộc khi từ chối) <input name="comment" maxlength="500" autocomplete="off"></label>
+    <div class="row decide">
+      <button class="btn" name="decision" value="approve" type="submit"{% if rk in ('R2', 'R3') %} data-confirm="Bạn chắc chắn muốn DUYỆT thao tác {{ rk }} này? Sau khi duyệt hệ thống sẽ thực hiện ngay."{% endif %}>Duyệt</button>
       <button class="btn danger" name="decision" value="reject" type="submit">Từ chối</button>
     </div>
   </form>
 </div>
 {% else %}<p class="muted">Không có yêu cầu nào đang chờ.</p>{% endfor %}
+{% if late %}
+<h2>Đã quá hạn, chưa xử lý ({{ late|length }})</h2>
+{% for a in late %}
+<div class="card expired">
+  <div class="a-head"><strong>{{ a.summary_vi }}</strong> {{ risk(a.risk) }} <span class="badge s-EXPIRED">Hết hạn</span></div>
+  <div class="muted">Thao tác: <code>{{ a.action.name }}</code> · task: {{ a.task_id or '—' }} · yêu cầu {{ a.requested_at|dt }} · hết hạn {{ a.expires_at|dt }}</div>
+  <p class="muted">Yêu cầu đã quá hạn nên không thể duyệt. Nếu vẫn cần, hãy ra lệnh lại.</p>
+</div>
+{% endfor %}{% endif %}
 <h2>Đã xử lý gần đây</h2>
 <div class="tablewrap"><table>
 <thead><tr><th>Mô tả</th><th>Kết quả</th><th>Người duyệt</th><th>Lý do</th><th>Lúc</th></tr></thead>
-<tbody>{% for a in done %}<tr><td>{{ a.summary_vi }}</td><td>{{ badge(a.status) }}</td><td>{{ a.decided_by or '—' }}</td><td>{{ a.comment or '—' }}</td><td>{{ (a.decided_at or a.requested_at)|dt }}</td></tr>
+<tbody>{% for a in done %}<tr><td data-label="Mô tả">{{ a.summary_vi }}</td><td data-label="Kết quả">{{ badge(a.status) }}</td><td data-label="Người duyệt">{{ a.decided_by or '—' }}</td><td data-label="Lý do">{{ a.comment or '—' }}</td><td data-label="Lúc">{{ (a.decided_at or a.requested_at)|dt }}</td></tr>
 {% else %}<tr><td colspan="5" class="muted">Chưa có.</td></tr>{% endfor %}</tbody></table></div>
 {% endblock %}

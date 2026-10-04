@@ -2,7 +2,7 @@
 {% from "_macros.html" import badge, risk %}
 {% block body %}
 <div class="tablewrap"><table>
-<thead><tr><th>Task</th><th>Kết quả</th><th>Model</th><th>Chi phí</th><th>Độ trễ</th><th>Lúc</th></tr></thead>
-<tbody>{% for e in records %}<tr><td><a href="{{ prefix }}/evidence/{{ e.task_id }}">{{ e.goal }}</a></td><td>{{ badge(e.final_outcome) }}</td><td>{{ e.model_name or '—' }}</td><td>{{ e.cost_usd|usd }}</td><td>{{ e.latency_ms }} ms</td><td>{{ e.created_at|dt }}</td></tr>
+<thead><tr><th>Việc</th><th>Kết quả</th><th>Mô hình</th><th>Chi phí</th><th>Độ trễ</th><th>Lúc</th></tr></thead>
+<tbody>{% for e in records %}<tr><td data-label="Việc"><a href="{{ prefix }}/evidence/{{ e.task_id }}">{{ e.goal }}</a></td><td data-label="Kết quả">{{ badge(e.final_outcome) }}</td><td data-label="Mô hình">{{ e.model_name or '—' }}</td><td data-label="Chi phí">{{ e.cost_usd|usd }}</td><td data-label="Độ trễ">{{ e.latency_ms }} ms</td><td data-label="Lúc">{{ e.created_at|dt }}</td></tr>
 {% else %}<tr><td colspan="6" class="muted">Chưa có bằng chứng.</td></tr>{% endfor %}</tbody></table></div>
 {% endblock %}

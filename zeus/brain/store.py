@@ -56,6 +56,24 @@ class PgMemoryStore(PgBase):
                 self._has_vector = await cur.fetchone() is not None
         return self._has_vector
 
+    async def ensure_hnsw_index(self, dim: int, *, concurrently: bool = True) -> bool:
+        """Tạo index HNSW cosine cho vector ``dim`` chiều (cột ``embedding`` không cố định chiều nên dùng index biểu thức một phần,
+        khớp truy vấn của ``PgBrainRetriever``). Cần đổi embedding sang số chiều khác migration 203 (256) thì gọi hàm này.
+        Trả False nếu thiếu pgvector/HNSW (< 0.5) hoặc chưa có cột embedding. Idempotent."""
+        dim = int(dim)
+        if not 1 <= dim <= 2000:
+            raise ValueError("dim phải trong [1, 2000] (giới hạn index HNSW của pgvector)")
+        name = f"memory_items_emb_hnsw_{dim}"
+        async with self.conn() as c:
+            cur = await c.execute("SELECT 1 FROM pg_am WHERE amname='hnsw'")
+            if await cur.fetchone() is None or not await self.has_vector():
+                return False
+            await c.execute(
+                f"CREATE INDEX {'CONCURRENTLY ' if concurrently else ''}IF NOT EXISTS {name} ON memory_items "
+                f"USING hnsw ((embedding::vector({dim})) vector_cosine_ops) WITH (m = 16, ef_construction = 64) WHERE vector_dims(embedding) = {dim}"
+            )
+        return True
+
     async def _embed_one(self, item: MemoryItem) -> list[float] | None:
         if self.embedder is None or not await self.has_vector():
             return None

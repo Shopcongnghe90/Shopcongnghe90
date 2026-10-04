@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from zeus.contracts.models import RiskLevel, TaskFamily
 
-PLAYBOOK_VERSION = "playbook-1"
+PLAYBOOK_VERSION = "playbook-2"  # 2: bước optional (http.check/file.checksum) chỉ có khi entity của Intent qua kiểm allowlist
 
 
 @dataclass(frozen=True)
@@ -22,6 +22,7 @@ class Step:
     risk: RiskLevel = RiskLevel.R0
     capabilities: tuple[str, ...] = ()
     acceptance: tuple[str, ...] = ()
+    optional: bool = False  # chỉ đưa vào kế hoạch nếu sinh được tham số typed hợp lệ từ entity của Intent (url/path...)
 
 
 def _code(family_label: str) -> list[Step]:
@@ -29,7 +30,8 @@ def _code(family_label: str) -> list[Step]:
         Step("analyze", f"Phân tích yêu cầu ({family_label})", acceptance=("Hiểu rõ phạm vi và tiêu chí hoàn thành",)),
         Step("implement", "Thực hiện thay đổi", ("analyze",), action="code.apply_patch", risk=RiskLevel.R1, capabilities=("git", "python"), acceptance=("Diff áp dụng sạch",)),
         Step("test", "Chạy kiểm thử", ("implement",), action="test.run", capabilities=("python",), acceptance=("Toàn bộ test liên quan pass",)),
-        Step("report", "Tổng kết và bàn giao", ("test",), acceptance=("Có bằng chứng test đính kèm",)),
+        Step("check", "Kiểm tra trang/API sau thay đổi", ("test",), action="http.check", optional=True, acceptance=("HTTP 200 trên địa chỉ đã nêu",)),
+        Step("report", "Tổng kết và bàn giao", ("test", "check"), acceptance=("Có bằng chứng test đính kèm",)),
     ]
 
 
@@ -70,7 +72,8 @@ PLAYBOOKS: dict[TaskFamily, list[Step]] = {
     TaskFamily.DEPLOYMENT: [
         Step("prepare", "Chuẩn bị bản phát hành", action="test.run", capabilities=("python",), acceptance=("Test pass trước khi deploy",)),
         Step("deploy", "Triển khai", ("prepare",), action="deploy.apply", risk=RiskLevel.R2, acceptance=("Triển khai hoàn tất",)),
-        Step("verify", "Kiểm tra sau triển khai", ("deploy",), action="http.check", acceptance=("Health check pass",)),
+        Step("checksum", "Đối chiếu checksum tệp phát hành", ("deploy",), action="file.checksum", optional=True, acceptance=("sha256 của tệp phát hành khớp",)),
+        Step("verify", "Kiểm tra sau triển khai", ("deploy", "checksum"), action="http.check", acceptance=("Health check pass",)),
     ],
     TaskFamily.SECURITY: [
         Step("scan", "Rà soát bảo mật", action="security.scan", acceptance=("Có báo cáo rà soát",)),

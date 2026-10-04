@@ -6,6 +6,7 @@ Mọi truy vấn bắt buộc lọc ``tenant_id``. Vector tắt/hỏng => lexica
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from zeus.brain.conflicts import resolve_conflicts
@@ -26,6 +27,10 @@ from zeus.contracts.models import (
 )
 
 RRF_K = 60
+
+
+def hnsw_index_name(dim: int) -> str:
+    return f"memory_items_emb_hnsw_{int(dim)}"
 
 
 def rrf_fuse(rank_lists: list[list[str]], k: int = RRF_K) -> dict[str, float]:
@@ -72,6 +77,19 @@ class PgBrainRetriever(PgBase):
         self.reranker: Reranker = reranker or LexicalReranker()
         self.candidate_k = candidate_k
         self.default_token_budget = default_token_budget
+        self._hnsw_cache: tuple[int, bool, float] | None = None  # (dim, có index, thời điểm kiểm)
+
+    async def _hnsw_dim(self, c: Any) -> int | None:
+        """Số chiều nếu có index HNSW ``memory_items_emb_hnsw_<dim>`` khớp embedder (migration 203/``PgMemoryStore.ensure_hnsw_index``).
+        Kết quả "chưa có" chỉ nhớ 60s để index tạo sau được dùng ngay mà không phải restart."""
+        dim = getattr(self.embedder, "dim", None)
+        if not isinstance(dim, int) or dim < 1:
+            return None
+        now = time.monotonic()
+        if self._hnsw_cache is None or self._hnsw_cache[0] != dim or (not self._hnsw_cache[1] and now - self._hnsw_cache[2] > 60):
+            cur = await c.execute("SELECT 1 FROM pg_indexes WHERE tablename='memory_items' AND indexname=%s", (hnsw_index_name(dim),))
+            self._hnsw_cache = (dim, await cur.fetchone() is not None, now)
+        return dim if self._hnsw_cache[1] else None
 
     def _filters(self, q: RetrievalQuery) -> tuple[str, list[Any]]:
         sql = (
@@ -122,13 +140,31 @@ class PgBrainRetriever(PgBase):
                 except EmbeddingUnavailable:
                     qv = None
                 if qv is not None:
-                    cur = await c.execute(
-                        "SELECT m.memory_id, 1 - (m.embedding <=> %s::vector) AS s FROM memory_items m "
-                        f"WHERE m.embedding IS NOT NULL AND m.embedding_model=%s AND {where} "
-                        "ORDER BY m.embedding <=> %s::vector, m.memory_id LIMIT %s",
-                        [vec_literal(qv), self.embedder.model_name, *args, vec_literal(qv), self.candidate_k],
-                    )
-                    vec = {r["memory_id"]: float(r["s"]) for r in await cur.fetchall()}
+                    hdim = await self._hnsw_dim(c)
+                    if hdim is not None and len(qv) == hdim:
+                        # Dạng biểu thức khớp index HNSW một phần (vector_dims = D): planner dùng index khi bảng đủ lớn, vẫn quét tuần tự khi nhỏ.
+                        # ef_search cao hơn mặc định vì lọc tenant/kind diễn ra SAU khi quét index (hậu lọc) => tránh hụt kết quả.
+                        e = f"(m.embedding::vector({hdim}))"
+                        async with c.transaction():
+                            await c.execute("SELECT set_config('hnsw.ef_search', %s, true)", (str(min(1000, max(100, self.candidate_k * 5))),))
+                            cur = await c.execute(
+                                "SELECT memory_id, s FROM ("
+                                f"SELECT m.memory_id, 1 - ({e} <=> %s::vector({hdim})) AS s FROM memory_items m "
+                                f"WHERE vector_dims(m.embedding) = {hdim} AND m.embedding_model=%s AND {where} "
+                                f"ORDER BY {e} <=> %s::vector({hdim}) LIMIT %s"  # khoá phụ ở truy vấn trong làm planner bỏ index
+                                ") t ORDER BY s DESC, memory_id",  # thứ tự ổn định cho các điểm bằng nhau
+                                [vec_literal(qv), self.embedder.model_name, *args, vec_literal(qv), self.candidate_k],
+                            )
+                            rows = await cur.fetchall()
+                    else:
+                        cur = await c.execute(
+                            "SELECT m.memory_id, 1 - (m.embedding <=> %s::vector) AS s FROM memory_items m "
+                            f"WHERE m.embedding IS NOT NULL AND m.embedding_model=%s AND {where} "
+                            "ORDER BY m.embedding <=> %s::vector, m.memory_id LIMIT %s",
+                            [vec_literal(qv), self.embedder.model_name, *args, vec_literal(qv), self.candidate_k],
+                        )
+                        rows = await cur.fetchall()
+                    vec = {r["memory_id"]: float(r["s"]) for r in rows}
                     used_vector = True
             fused = rrf_fuse([list(lex), list(vec)])
             ids = sorted(fused, key=lambda i: (-fused[i], i))[: self.candidate_k]

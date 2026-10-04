@@ -7,9 +7,9 @@
   <div class="card stat"><div class="k">Thành công xác minh</div><div class="v">{{ n_success }}</div></div>
 </div>
 <h2>Champion / Challenger</h2>
-<p class="muted">Champion = model có cost per verified success thấp nhất trong nhóm việc, cần ít nhất {{ min_n }} lượt. Router chỉ học từ outcome đã xác minh.</p>
-<div class="tablewrap"><table><thead><tr><th>Nhóm việc</th><th>Model</th><th>Vai trò</th><th>Lượt</th><th>Tỉ lệ đạt</th><th>Cost / verified success</th></tr></thead>
-<tbody>{% for r in rows %}<tr><td>{{ r.family }}</td><td>{{ r.stat.provider|val }} / {{ r.stat.model }}</td><td><span class="badge role-{{ 'champ' if r.role == 'champion' else 'other' }}">{{ r.role }}</span></td>
-<td>{{ r.stat.n }}</td><td>{{ '%.0f%%' % (r.stat.success_rate * 100) }}</td><td>{{ r.stat.cost_per_verified_success|usd }}</td></tr>
+<p class="muted">Champion (dẫn đầu) = mô hình có chi phí trên mỗi thành công xác minh thấp nhất trong nhóm việc, cần ít nhất {{ min_n }} lượt. Bộ định tuyến chỉ học từ kết quả đã xác minh.</p>
+<div class="tablewrap"><table><thead><tr><th>Nhóm việc</th><th>Mô hình</th><th>Vai trò</th><th>Lượt</th><th>Tỉ lệ đạt</th><th>Chi phí / thành công xác minh</th></tr></thead>
+<tbody>{% for r in rows %}<tr><td data-label="Nhóm việc">{{ r.family|fam }}</td><td data-label="Mô hình">{{ r.stat.provider|val }} / {{ r.stat.model }}</td><td data-label="Vai trò"><span class="badge role-{{ 'champ' if r.role == 'champion' else 'other' }}">{{ r.role|role }}</span></td>
+<td data-label="Lượt">{{ r.stat.n }}</td><td data-label="Tỉ lệ đạt">{{ '%.0f%%' % (r.stat.success_rate * 100) }}</td><td data-label="Chi phí / thành công xác minh">{{ r.stat.cost_per_verified_success|usd }}</td></tr>
 {% else %}<tr><td colspan="6" class="muted">Chưa có số liệu học.</td></tr>{% endfor %}</tbody></table></div>
 {% endblock %}

@@ -77,7 +77,7 @@ async def test_happy_path_dag_dispatch_judge_evidence_outcome(temporal_env, rig)
     assert [a for a in h.fw.executed] == ["code.apply_patch", "test.run"]  # analyze/report không có action
     recs = await rig.evidence.list_for_task("zeusvn", task.task_id)
     assert len(recs) == 1 and recs[0].final_outcome is Outcome.VERIFIED_SUCCESS and recs[0].verified_by == "deterministic"
-    assert recs[0].playbook_version == "playbook-1" and recs[0].worker_id == "w1" and recs[0].tools == ["code.apply_patch", "test.run"]
+    assert recs[0].playbook_version == "playbook-2" and recs[0].worker_id == "w1" and recs[0].tools == ["code.apply_patch", "test.run"]
     assert verdict.evidence_ids == [recs[0].record_id] and recs[0].schedule_decision_id
     assert rig.outcomes.dataset[0].outcome is Outcome.VERIFIED_SUCCESS
     assert (await rig.store.get_task("zeusvn", task.task_id)).status is TaskStatus.SUCCEEDED
@@ -182,7 +182,7 @@ async def test_parallel_dag_nodes_dispatch_concurrently(temporal_env, models_cfg
                 return TaskNode(node_id=i, title=i, depends_on=list(deps), acceptance=["ok"], required_capabilities=["python"],
                                 action=TypedAction(name=name, tenant_id=task.tenant_id, task_id=task.task_id, args={}))
             g = TaskGraph(task_id=task.task_id, nodes=[n("a"), n("b"), n("c", ["a", "b"])])
-            return Plan(task_id=task.task_id, graph=g, planner="playbook-1")
+            return Plan(task_id=task.task_id, graph=g, planner="playbook-2")
 
     rig.deps.planner = ForkPlanner()
     hold = asyncio.Event()

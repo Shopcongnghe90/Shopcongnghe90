@@ -1,2 +1,2 @@
 {% macro badge(v) %}<span class="badge s-{{ v|val }}">{{ v|vi }}</span>{% endmacro %}
-{% macro risk(v) %}<span class="badge r-{{ v|val }}">{{ v|val }}</span>{% endmacro %}
+{% macro risk(v) %}{% set k = v|val %}<span class="badge risk r-{{ k }}" title="Mức rủi ro {{ k }}: {{ risk_vi[k] }}"><span aria-hidden="true">{{ {'R0': '', 'R1': '', 'R2': '▲ ', 'R3': '▲▲ '}[k] }}</span>{{ k }} · {{ risk_vi[k] }}</span>{% endmacro %}

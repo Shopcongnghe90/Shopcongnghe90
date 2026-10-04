@@ -54,6 +54,11 @@ async def run(
 
     client = client or await connect(settings.temporal_address, settings.temporal_namespace)
     system = system or build_system(settings, temporal_client=client, task_queue=task_queue)
+    from zeus.storage.db import close_pool, get_pool
+
+    had_pool = get_pool(system.dsn)
+    pool = await system.open_pool()  # pool kết nối dùng chung cho mọi store/activity (cùng event loop với worker)
+    owns_pool = pool is not None and pool is not had_pool
     worker = build_worker(client, system.deps, task_queue)
     sweeper = asyncio.create_task(sweep_loop(system, stop, sweep_interval_s))
     log.info("control worker chạy trên task queue %s (cloud=%s)", task_queue, settings.claude_cloud_available)
@@ -63,6 +68,8 @@ async def run(
     finally:
         stop.set()
         await asyncio.gather(sweeper, return_exceptions=True)
+        if owns_pool:
+            await close_pool(pool)
 
 
 def main(argv: list[str] | None = None) -> int:

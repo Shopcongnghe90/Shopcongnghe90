@@ -1,14 +1,13 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, risk %}
 {% block body %}
-<div class="card"><strong>{{ task.goal }}</strong><br>
-  {{ badge(task.status) }} {{ risk(task.risk) }} <span class="muted">· {{ task.family|val }} · workflow: {{ task.workflow_id or '—' }} · {{ task.created_at|dt }}</span>
+<div class="card">{{ badge(task.status) }} {{ risk(task.risk) }} <span class="muted">· {{ task.family|fam }} · workflow: {{ task.workflow_id or '—' }} · {{ task.created_at|dt }}</span>
   {% if task.acceptance_criteria %}<ul>{% for c in task.acceptance_criteria %}<li>{{ c }}</li>{% endfor %}</ul>{% endif %}
 </div>
-<h2>Task Graph</h2>
+<h2>Sơ đồ công việc</h2>
 {% if dag %}
 <div class="dag">
-<svg viewBox="0 0 {{ dag.width }} {{ dag.height }}" width="{{ dag.width }}" height="{{ dag.height }}" role="img" aria-label="Sơ đồ task graph">
+<svg viewBox="0 0 {{ dag.width }} {{ dag.height }}" width="{{ dag.width }}" height="{{ dag.height }}" role="img" aria-label="Sơ đồ công việc">
   {% for e in dag.edges %}<path class="edge" d="{{ e.path }}"></path>{% endfor %}
   {% for n in dag.nodes %}
   <g class="node st-{{ n.status }}" transform="translate({{ n.x }},{{ n.y }})">

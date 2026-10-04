@@ -440,6 +440,7 @@ class Task(ZeusModel):
     workflow_id: str | None = None
     trace: TraceContext | None = None
     untrusted: bool = False  # nguồn gốc từ event không tin cậy (kênh ngoài): action không-đọc-thuần cần duyệt (P-UNTRUSTED-ORIGIN)
+    entities: dict[str, str] = Field(default_factory=dict)  # entity trích từ Intent (url/domain/order_id/path/sha256): CHỈ là dữ liệu, planner phải kiểm allowlist trước khi dùng làm tham số (ADR-022)
 
 
 class TaskNode(ZeusModel):

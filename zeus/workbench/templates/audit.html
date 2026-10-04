@@ -2,6 +2,6 @@
 {% from "_macros.html" import badge, risk %}
 {% block body %}
 <div class="tablewrap"><table><thead><tr><th>Lúc</th><th>Chủ thể</th><th>Hành động</th><th>Đối tượng</th><th>Chi tiết</th></tr></thead>
-<tbody>{% for e in entries %}<tr><td>{{ e.at }}</td><td>{{ e.actor }}</td><td>{{ e.action }}</td><td>{{ e.target }}</td><td>{{ e.detail }}</td></tr>
-{% else %}<tr><td colspan="5" class="muted">Chưa có bản ghi kiểm toán (hoặc chưa kết nối nguồn audit_log).</td></tr>{% endfor %}</tbody></table></div>
+<tbody>{% for e in entries %}<tr><td data-label="Lúc">{{ e.at }}</td><td data-label="Chủ thể">{{ e.actor }}</td><td data-label="Hành động">{{ e.action }}</td><td data-label="Đối tượng">{{ e.target }}</td><td data-label="Chi tiết">{{ e.detail }}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">{{ 'Chưa có bản ghi kiểm toán.' if audit_connected else 'Chưa kết nối nguồn nhật ký kiểm toán.' }}</td></tr>{% endfor %}</tbody></table></div>
 {% endblock %}

@@ -24,6 +24,7 @@ from zeus.contracts.models import (
     ZeusModel,
 )
 from zeus.intent.text import fold
+from zeus.policy.params import ParamPolicy
 from zeus.risk.patterns import find_dangerous
 
 
@@ -44,6 +45,8 @@ class PolicyConfig(ZeusModel):
     tenants: dict[str, TenantPolicy] = Field(default_factory=dict)
     # Task có nguồn gốc untrusted (khách ngoài kênh) chỉ được tự chạy các action đọc thuần này; còn lại cần duyệt.
     untrusted_auto_actions: list[str] = Field(default_factory=lambda: ["*.read", "*.get", "*.list", "*.search", "*.check"])
+    # allowlist tham số typed action đọc/kiểm chứng trên worker (url/domain, đường dẫn tệp, repo); rỗng => từ chối hết
+    params: ParamPolicy = Field(default_factory=ParamPolicy)
 
     @model_validator(mode="after")
     def _single_approver_only(self) -> "PolicyConfig":
@@ -69,6 +72,7 @@ class PolicyConfig(ZeusModel):
             required_approvers=dict(appr.get("required_approvers", {"R2": 1, "R3": 1})),
             deny_actions=list(raw.get("deny_actions", [])),
             **({"untrusted_auto_actions": list(raw["untrusted"]["auto_actions"])} if (raw.get("untrusted") or {}).get("auto_actions") is not None else {}),
+            params=ParamPolicy.from_dict(raw.get("params")),
             per_task_usd=bud.get("per_task_usd"),
             per_day_usd=bud.get("per_day_usd"),
             tenants={k: TenantPolicy(**v) for k, v in (raw.get("tenants") or {}).items()},
@@ -105,6 +109,9 @@ class DefaultPolicyEngine:
             return deny("tenant của action khác tenant của task", "P-TENANT-MISMATCH")
         if not any(fnmatch.fnmatchcase(action.name, g) for g in tp.allow_actions):
             return deny(f"tenant {action.tenant_id} không được phép dùng {action.name}", "P-TENANT-ALLOWLIST")
+        bad_params = cfg.params.violations(action.name, action.args)
+        if bad_params:
+            return deny("tham số ngoài allowlist: " + "; ".join(bad_params), "P-PARAM-ALLOWLIST")
         hits = find_dangerous(fold(json.dumps(action.args, ensure_ascii=False, default=str)))
         if hits:
             return deny("tham số chứa mẫu nguy hiểm: " + "; ".join(d for _, d in hits), "P-DANGEROUS-ARGS")

@@ -41,6 +41,7 @@ pytestmark = [pytest.mark.pg, pytest.mark.temporal, pytest.mark.cloud_exit_workf
 REPO = Path(__file__).resolve().parents[2]
 TENANT = "zeusvn"
 WB_PASSWORD = "e2e-mat-khau-dai-du"
+E2E_HOST = "zeus-e2e.test"
 
 
 @dataclass
@@ -81,9 +82,14 @@ async def stack(pg_dsn: str, temporal_env, tmp_path: Path, monkeypatch) -> Async
     for k in [k for k in os.environ if k.startswith("CLAUDE_CODE_")]:
         monkeypatch.delenv(k)
     apply_migrations(pg_dsn, REPO / "migrations")
+    import yaml
+
+    policy = yaml.safe_load((REPO / "config/policy.yaml").read_text(encoding="utf-8"))
+    policy["params"] = {"http_allow_domains": [E2E_HOST], "file_roots": [], "repo_roots": []}  # allowlist cho tham số typed (Phase 2)
+    (tmp_path / "policy.yaml").write_text(yaml.safe_dump(policy), encoding="utf-8")
     settings = Settings(
         env="test", db_dsn=pg_dsn, claude_cloud_available=False, data_dir=tmp_path / "var",
-        models_config=REPO / "config/models.yaml", policy_config=REPO / "config/policy.yaml", brain_config=REPO / "config/brain.yaml",
+        models_config=REPO / "config/models.yaml", policy_config=tmp_path / "policy.yaml", brain_config=REPO / "config/brain.yaml",
         workers_config=REPO / "config/workers.yaml", channels_config=REPO / "config/channels.yaml",
     )
     queue = f"zeus-control-e2e-{uuid.uuid4().hex[:8]}"
@@ -101,9 +107,10 @@ async def stack(pg_dsn: str, temporal_env, tmp_path: Path, monkeypatch) -> Async
     wcfg = WorkerConfig(
         server_url="http://zeus", worker_id="w-e2e", work_dir=tmp_path / "work", extra_capabilities=["python"],
         repo_roots=[tmp_path / "work"], test_repo=repo, test_target="tests", heartbeat_interval_s=0.3, poll_wait_s=1,
+        http_allow_domains=[E2E_HOST],
     )
     wclient = WorkerApiClient("http://zeus", token, transport=transport)
-    agent = WorkerAgent(wcfg, wclient)
+    agent = WorkerAgent(wcfg, wclient, http_transport=httpx.MockTransport(lambda req: httpx.Response(200, text="ok")))  # không mạng ngoài
 
     stop = asyncio.Event()
     control = asyncio.create_task(run_control_worker(settings, stop, client=temporal_env.client, task_queue=queue, sweep_interval_s=0.5, system=system))
@@ -253,3 +260,26 @@ async def test_e2e_r2_rejected_never_dispatches(stack: Stack) -> None:
     assert stack.q("SELECT count(*) AS n FROM assignments WHERE task_id=%s", task_id) == [{"n": 0}]
     task = (await stack.http.get(Paths.TASK.format(task_id=task_id), headers={HEADER_TENANT: TENANT})).json()["task"]
     assert task["status"] in (TaskStatus.FAILED.value, TaskStatus.CANCELLED.value)
+
+
+async def test_e2e_planner_typed_params_http_check_runs_on_worker(stack: Stack) -> None:
+    """Phase 2 (1): URL trong yêu cầu -> entity Intent -> planner sinh http.check (allowlist+schema) -> worker thật chạy
+    (transport giả, không mạng ngoài) -> EvidenceItem HTTP_CHECK passed. URL ngoài allowlist => bước thủ công, không dispatch."""
+    res = await stack.ingest(f"Sửa endpoint backend API tính giá, chạy kiểm thử rồi kiểm tra https://{E2E_HOST}/health", "e2e-typed-1")
+    task_id = res["task_id"]
+    verdict = await stack.verdict(task_id)
+    assert verdict.decision is VerdictDecision.PASS, verdict
+    nodes = {n["node_id"]: n for n in stack.q("SELECT node_id, status, data FROM task_nodes WHERE task_id=%s", task_id)}
+    assert nodes["check"]["data"]["action"]["name"] == "http.check" and nodes["check"]["data"]["action"]["args"]["url"] == f"https://{E2E_HOST}/health"
+    assert nodes["check"]["status"] == "SUCCEEDED"
+    assert stack.q("SELECT data->'entities'->>'url' AS u FROM tasks WHERE task_id=%s", task_id) == [{"u": f"https://{E2E_HOST}/health"}]
+    asg = stack.q("SELECT payload->'action'->>'name' AS name, status FROM assignments WHERE task_id=%s ORDER BY name", task_id)
+    assert asg == [{"name": "http.check", "status": "COMPLETED"}, {"name": "test.run", "status": "COMPLETED"}]
+    payload = stack.q("SELECT payload FROM evidence_records WHERE task_id=%s", task_id)[0]["payload"]
+    assert [e for e in payload["evidence"] if e["kind"] == "http_check" and e["passed"] is True]
+
+    res2 = await stack.ingest("Sửa endpoint backend API tính giá, chạy kiểm thử rồi kiểm tra https://evil.example.org/health", "e2e-typed-2")
+    verdict2 = await stack.verdict(res2["task_id"])
+    assert verdict2.decision is VerdictDecision.PASS
+    assert {r["name"] for r in stack.q("SELECT payload->'action'->>'name' AS name FROM assignments WHERE task_id=%s", res2["task_id"])} == {"test.run"}
+    assert "check" not in {n["node_id"] for n in stack.q("SELECT node_id FROM task_nodes WHERE task_id=%s", res2["task_id"])}

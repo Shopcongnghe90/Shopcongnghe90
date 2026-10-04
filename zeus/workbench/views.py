@@ -122,6 +122,7 @@ def layout_dag(graph: TaskGraph) -> dict[str, object]:
 # --------------------------------------------------------------------------- Decision Ledger
 
 _ADR_RE = re.compile(r"^## (ADR-\d+) — (.+)$")
+_BACKTICK_RE = re.compile(r"`+")
 
 
 def parse_ledger(path: Path) -> list[dict[str, str]]:
@@ -133,11 +134,11 @@ def parse_ledger(path: Path) -> list[dict[str, str]]:
     for line in path.read_text(encoding="utf-8").splitlines():
         m = _ADR_RE.match(line)
         if m:
-            cur = {"id": m.group(1), "title": m.group(2), "date": "", "decision": "", "status": ""}
+            cur = {"id": m.group(1), "title": _BACKTICK_RE.sub("", m.group(2)), "date": "", "decision": "", "status": ""}
             items.append(cur)
         elif cur is not None:
             for label, key in (("Ngày", "date"), ("Quyết định", "decision"), ("Trạng thái", "status")):
                 prefix = f"- **{label}:**"
                 if line.startswith(prefix):
-                    cur[key] = line[len(prefix) :].strip()
+                    cur[key] = _BACKTICK_RE.sub("", line[len(prefix) :]).strip()
     return items

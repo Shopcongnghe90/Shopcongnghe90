@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 {% from "_macros.html" import badge, risk %}
 {% block body %}
-<h2>Task thất bại / đã rollback ({{ failed|length }})</h2>
+<h2>Việc thất bại / đã hoàn tác ({{ failed|length }})</h2>
 <div class="tablewrap"><table><thead><tr><th>Mục tiêu</th><th>Trạng thái</th><th>Lúc</th></tr></thead>
-<tbody>{% for t in failed %}<tr><td><a href="{{ prefix }}/workflows/{{ t.task_id }}">{{ t.goal }}</a></td><td>{{ badge(t.status) }}</td><td>{{ t.created_at|dt }}</td></tr>
+<tbody>{% for t in failed %}<tr><td data-label="Mục tiêu"><a href="{{ prefix }}/workflows/{{ t.task_id }}">{{ t.goal }}</a></td><td data-label="Trạng thái">{{ badge(t.status) }}</td><td data-label="Lúc">{{ t.created_at|dt }}</td></tr>
 {% else %}<tr><td colspan="3" class="muted">Không có.</td></tr>{% endfor %}</tbody></table></div>
-<h2>Có retry ({{ retried|length }})</h2>
-<div class="tablewrap"><table><thead><tr><th>Task</th><th>Số retry</th><th>Kết quả</th></tr></thead>
-<tbody>{% for e in retried %}<tr><td><a href="{{ prefix }}/evidence/{{ e.task_id }}">{{ e.goal }}</a></td><td>{{ e.retries }}</td><td>{{ badge(e.final_outcome) }}</td></tr>
+<h2>Có thử lại ({{ retried|length }})</h2>
+<div class="tablewrap"><table><thead><tr><th>Việc</th><th>Số lần thử lại</th><th>Kết quả</th></tr></thead>
+<tbody>{% for e in retried %}<tr><td data-label="Việc"><a href="{{ prefix }}/evidence/{{ e.task_id }}">{{ e.goal }}</a></td><td data-label="Số lần thử lại">{{ e.retries }}</td><td data-label="Kết quả">{{ badge(e.final_outcome) }}</td></tr>
 {% else %}<tr><td colspan="3" class="muted">Không có.</td></tr>{% endfor %}</tbody></table></div>
-<h2>Đã rollback ({{ rolled|length }})</h2>
-<div class="tablewrap"><table><thead><tr><th>Task</th><th>Tham chiếu rollback</th></tr></thead>
-<tbody>{% for e in rolled %}<tr><td><a href="{{ prefix }}/evidence/{{ e.task_id }}">{{ e.goal }}</a></td><td>{{ e.rollback_ref or '—' }}</td></tr>
+<h2>Đã hoàn tác ({{ rolled|length }})</h2>
+<div class="tablewrap"><table><thead><tr><th>Việc</th><th>Mã hoàn tác</th></tr></thead>
+<tbody>{% for e in rolled %}<tr><td data-label="Việc"><a href="{{ prefix }}/evidence/{{ e.task_id }}">{{ e.goal }}</a></td><td data-label="Mã hoàn tác">{{ e.rollback_ref or '—' }}</td></tr>
 {% else %}<tr><td colspan="2" class="muted">Không có.</td></tr>{% endfor %}</tbody></table></div>
 {% endblock %}

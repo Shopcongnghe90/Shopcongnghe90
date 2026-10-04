@@ -15,6 +15,13 @@ deny_actions:
   - "system.raw_*"
   - "secrets.export"
 
+# Allowlist tham số cho typed action đọc/kiểm chứng trên worker (planner chỉ sinh từ entity của yêu cầu khi nằm trong đây;
+# Policy Engine kiểm lại, luật P-PARAM-ALLOWLIST). Rỗng = không tự sinh/không cho chạy: điền khi triển khai thật.
+params:
+  http_allow_domains: []        # ví dụ: ["shop.vn", ".staging.shop.vn"] (chính nó + miền con / chỉ miền con)
+  file_roots: []                # ví dụ: ["/srv/releases"]
+  repo_roots: []                # ví dụ: ["/srv/repos"]
+
 budget:
   per_task_usd: 2.0
   per_day_usd: 25.0

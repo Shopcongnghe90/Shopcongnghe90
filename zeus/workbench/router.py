@@ -8,6 +8,8 @@ CSP chặt (chỉ 'self', không inline script), chỉ bind mạng nội bộ (c
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 import secrets
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -53,9 +55,9 @@ AuditProvider = Callable[[str], Awaitable[list[dict[str, Any]]]]
 VN = timezone(timedelta(hours=7))
 
 NAV = [
-    ("", "Tổng quan"), ("/command", "Ra lệnh"), ("/workflows", "Workflows"), ("/approvals", "Duyệt"), ("/evidence", "Bằng chứng"),
-    ("/agents", "Agents / Models"), ("/workers", "Workers / VM"), ("/costs", "Chi phí & độ trễ"), ("/errors", "Lỗi / Retry / Rollback"),
-    ("/learning", "Học tập"), ("/audit", "Kiểm toán"), ("/brain", "Project Brain"), ("/ledger", "Decision Ledger"),
+    ("", "Tổng quan"), ("/command", "Ra lệnh"), ("/workflows", "Luồng việc"), ("/approvals", "Duyệt"), ("/evidence", "Bằng chứng"),
+    ("/agents", "Tác tử / Mô hình"), ("/workers", "Máy chạy (Worker)"), ("/costs", "Chi phí & độ trễ"), ("/errors", "Lỗi / Thử lại / Hoàn tác"),
+    ("/learning", "Học tập"), ("/audit", "Kiểm toán"), ("/brain", "Bộ nhớ dự án"), ("/ledger", "Sổ quyết định"),
 ]
 STATUS_VI = {
     "PENDING": "Chờ", "PLANNED": "Đã lập kế hoạch", "AWAITING_APPROVAL": "Chờ duyệt", "SCHEDULED": "Đã xếp lịch", "RUNNING": "Đang chạy",
@@ -63,7 +65,27 @@ STATUS_VI = {
     "ONLINE": "Trực tuyến", "DEGRADED": "Suy giảm", "DRAINING": "Đang rút", "OFFLINE": "Ngoại tuyến",
     "APPROVED": "Đã duyệt", "REJECTED": "Từ chối", "EXPIRED": "Hết hạn",
     "VERIFIED_SUCCESS": "Đã xác minh: đạt", "VERIFIED_FAILURE": "Đã xác minh: không đạt", "UNVERIFIED": "Chưa xác minh",
+    "ACCEPTED": "Đã chấp nhận", "PROPOSED": "Đề xuất", "SUPERSEDED": "Đã thay thế", "DEPRECATED": "Không dùng nữa",
 }
+# Mã nội bộ -> nhãn tiếng Việt cho người vận hành (UX-07). Không có trong bảng thì giữ nguyên mã.
+FAMILY_VI = {
+    "erp_bug": "Lỗi ERP", "erp_feature": "Tính năng ERP", "website_edit": "Sửa website", "website_build": "Dựng website", "frontend": "Giao diện (frontend)",
+    "backend": "Máy chủ (backend)", "database": "Cơ sở dữ liệu", "customer_support": "Chăm sóc khách hàng", "zalo_issue": "Sự cố Zalo",
+    "facebook_issue": "Sự cố Facebook", "shopee_issue": "Sự cố Shopee", "domain_provisioning": "Cấp tên miền", "deployment": "Triển khai",
+    "security": "Bảo mật", "visual_qa": "Kiểm tra giao diện", "worker_scheduling": "Xếp lịch worker", "model_routing": "Chọn mô hình",
+    "tool_selection": "Chọn công cụ", "general": "Chung",
+}
+KIND_VI = {"linux_vm": "Máy ảo Linux", "windows_vm": "Máy ảo Windows", "gpu_container": "Container GPU", "host_service": "Dịch vụ trên máy chủ"}
+MEMORY_KIND_VI = {
+    "canonical_state": "Trạng thái chuẩn", "decision": "Quyết định", "episodic": "Sự kiện", "semantic": "Kiến thức", "artifact": "Tệp sinh ra", "evidence": "Bằng chứng",
+}
+TRUST_VI = {"verified": "Đã xác thực", "unverified": "Chưa xác thực", "untrusted": "Không tin cậy"}
+ROLE_VI = {"champion": "Dẫn đầu (champion)", "challenger": "Thử nghiệm (challenger)"}
+EVIDENCE_KIND_VI = {
+    "test_result": "Kết quả kiểm thử", "build_log": "Nhật ký build", "diff": "Thay đổi mã", "data_match": "Đối chiếu dữ liệu", "http_check": "Kiểm tra HTTP",
+    "screenshot": "Ảnh chụp màn hình", "log": "Nhật ký", "human_confirmation": "Người xác nhận", "model_judgement": "Mô hình nhận xét",
+}
+RISK_VI = {"R0": "Chỉ đọc", "R1": "Ghi nội bộ", "R2": "Dữ liệu thật / production", "R3": "Tiền / xoá / ra ngoài"}
 
 
 @dataclass
@@ -86,12 +108,44 @@ def _fmt_dt(v: datetime | None) -> str:
     return v.astimezone(VN).strftime("%d/%m %H:%M:%S") if v else "—"
 
 
+def _mapper(table: dict[str, str]) -> Callable[[Any], str]:
+    return lambda v: table.get(str(getattr(v, "value", v)), str(getattr(v, "value", v)))
+
+
+def _fmt_ago(seconds: int | None) -> str:
+    if seconds is None:
+        return "chưa có"
+    if seconds < 60:
+        return f"{max(seconds, 0)} giây trước"
+    if seconds < 3600:
+        return f"{seconds // 60} phút trước"
+    if seconds < 86400:
+        return f"{seconds // 3600} giờ trước"
+    return f"{seconds // 86400} ngày trước"
+
+
+def _adr_status(text: str) -> str:
+    """'ACCEPTED (cài trên host...)' -> 'Đã chấp nhận (cài trên host...)'."""
+    m = re.match(r"([A-Z_]+)(.*)$", text.strip(), re.S)
+    return f"{STATUS_VI.get(m.group(1), m.group(1))}{m.group(2)}" if m else text
+
+
+def _pretty_json(v: Any) -> str:
+    return json.dumps(v, ensure_ascii=False, indent=2, sort_keys=True, default=str)
+
+
 def _make_env() -> Environment:
     env = Environment(loader=FileSystemLoader(HERE / "templates"), autoescape=select_autoescape(["html"]), trim_blocks=True, lstrip_blocks=True)
     env.filters["dt"] = _fmt_dt
     env.filters["usd"] = lambda v: "—" if v is None else f"${v:,.4f}"
     env.filters["vi"] = lambda v: STATUS_VI.get(getattr(v, "value", v), str(getattr(v, "value", v)))
     env.filters["val"] = lambda v: getattr(v, "value", v)
+    for name, table in (("fam", FAMILY_VI), ("kind", KIND_VI), ("mkind", MEMORY_KIND_VI), ("trust", TRUST_VI), ("role", ROLE_VI), ("ekind", EVIDENCE_KIND_VI)):
+        env.filters[name] = _mapper(table)
+    env.filters["ago"] = _fmt_ago
+    env.filters["adr_status"] = _adr_status
+    env.filters["pretty"] = _pretty_json
+    env.globals["risk_vi"] = RISK_VI
     env.globals["nav"] = NAV
     env.globals["prefix"] = PREFIX
     return env
@@ -250,6 +304,18 @@ async def _workers_view(ctx: WorkbenchContext) -> list[dict[str, Any]]:
     return out
 
 
+def _split_pending(ctx: WorkbenchContext, items: list[ApprovalRequest]) -> tuple[list[ApprovalRequest], list[ApprovalRequest]]:
+    """(còn hạn, đã quá hạn nhưng chưa được đánh dấu EXPIRED). Yêu cầu quá hạn không được hiện nút Duyệt/Từ chối (UX-01)."""
+    now = ctx.clock()
+    live = [a for a in items if not (a.expires_at and a.expires_at < now)]
+    late = [a for a in items if a.expires_at and a.expires_at < now]
+    return live, late
+
+
+_TASK_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
+_NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
+
 # --------------------------------------------------------------------------- trang
 
 
@@ -258,7 +324,7 @@ async def _workers_view(ctx: WorkbenchContext) -> list[dict[str, Any]]:
 async def overview(request: Request, s: Sess = Depends(require_user)) -> Response:
     ctx = _ctx(request)
     tasks = await _tasks(ctx)
-    pending = await ctx.data.list_approvals(ctx.tenant_id, ApprovalStatus.PENDING)
+    pending, _expired = _split_pending(ctx, await ctx.data.list_approvals(ctx.tenant_id, ApprovalStatus.PENDING))
     wv = await _workers_view(ctx)
     ev = await _all_evidence(ctx, tasks)
     counts = views.count_by_status(tasks)
@@ -272,9 +338,14 @@ async def overview(request: Request, s: Sess = Depends(require_user)) -> Respons
     )
 
 
+def _command_page(request: Request, s: Sess, *, status: int = 200, **kw: Any) -> Response:
+    return _render(request, s, "command.html", "Ra lệnh", "/command", status=status, families=FAMILY_VI, **kw)
+
+
 @router.get("/command")
-async def command_page(request: Request, s: Sess = Depends(require_user)) -> Response:
-    return _render(request, s, "command.html", "Ra lệnh", "/command", families=[f.value for f in TaskFamily])
+async def command_page(request: Request, sent: str = "", dup: str = "", s: Sess = Depends(require_user)) -> Response:
+    sent_id = sent if _TASK_ID_RE.match(sent) else ""
+    return _command_page(request, s, nonce=secrets.token_urlsafe(12), sent=sent_id, duplicate=dup == "1")
 
 
 @router.post("/command")
@@ -283,6 +354,8 @@ async def command_submit(request: Request, sf: tuple[Sess, dict[str, str]] = Dep
     ctx = _ctx(request)
     text = f.get("text", "").strip()
     fam = f.get("family", "")
+    nonce = f.get("nonce", "")
+    nonce = nonce if _NONCE_RE.match(nonce) else ""
     err = None
     if not text:
         err = "Vui lòng nhập nội dung lệnh."
@@ -297,20 +370,26 @@ async def command_submit(request: Request, sf: tuple[Sess, dict[str, str]] = Dep
         ev = Event(
             tenant_id=ctx.tenant_id, channel=Channel.WORKBENCH, kind=EventKind.COMMAND, text=text,
             sender=ChannelIdentity(channel_user_id=s.user or "operator", display_name=s.user),
+            # nonce sinh lúc mở form => gửi lại cùng form (F5, bấm đúp) bị gateway chặn trùng (UX-03)
+            external_id=f"wb:{nonce}" if nonce else None,
             signature_verified=True, untrusted=False, metadata={"requested_family": fam or None, "source": "workbench_session"},
         )
         try:
             result = await ctx.ingest(ev)  # type: ignore[misc]
         except Exception:
             err = "Event Gateway từ chối hoặc không phản hồi."
-    return _render(request, s, "command.html", "Ra lệnh", "/command", status=400 if err else 200, families=[x.value for x in TaskFamily], error=err, result=result, text=text if err else "")
+    if result is not None:  # Post/Redirect/Get: F5 trên trang kết quả chỉ tải lại GET, không gửi lệnh nữa
+        tid = result.task_id or ""
+        q = f"?sent={tid}" if tid and _TASK_ID_RE.match(tid) else "?sent="
+        return _redirect(request, s, f"/command{q}{'&dup=1' if result.duplicate else ''}")
+    return _command_page(request, s, status=400, nonce=nonce or secrets.token_urlsafe(12), error=err, text=text, sent="", duplicate=False)
 
 
 @router.get("/workflows")
 async def workflows(request: Request, status: str = "", s: Sess = Depends(require_user)) -> Response:
     ctx = _ctx(request)
     st = TaskStatus(status) if status in {x.value for x in TaskStatus} else None
-    return _render(request, s, "workflows.html", "Workflows", "/workflows", tasks=await _tasks(ctx, st), statuses=[x.value for x in TaskStatus], current=st.value if st else "")
+    return _render(request, s, "workflows.html", "Luồng việc", "/workflows", tasks=await _tasks(ctx, st), statuses=[x.value for x in TaskStatus], current=st.value if st else "")
 
 
 @router.get("/workflows/{task_id}")
@@ -321,17 +400,25 @@ async def workflow_detail(request: Request, task_id: str, s: Sess = Depends(requ
         raise HTTPException(404, "Không tìm thấy task")
     graph = await ctx.graph_provider(ctx.tenant_id, task_id) if ctx.graph_provider else None
     ev = await ctx.data.list_evidence(ctx.tenant_id, task_id)
-    return _render(request, s, "workflow_detail.html", "Task Graph", "/workflows", task=task, dag=views.layout_dag(graph) if graph else None, evidence=ev)
+    goal = " ".join(task.goal.split())
+    title = goal if len(goal) <= 60 else goal[:59] + "…"
+    return _render(request, s, "workflow_detail.html", title, "/workflows", task=task, dag=views.layout_dag(graph) if graph else None, evidence=ev)
+
+
+FLASH = {
+    "approved": "Đã duyệt.", "rejected": "Đã từ chối.",
+    "expired": "Yêu cầu đã hết hạn, không được duyệt.",
+    "error": "Không ghi được quyết định (đã xử lý, đã hết hạn hoặc không tồn tại).",
+}
 
 
 @router.get("/approvals")
 async def approvals(request: Request, msg: str = "", s: Sess = Depends(require_user)) -> Response:
     ctx = _ctx(request)
-    pending = await ctx.data.list_approvals(ctx.tenant_id, ApprovalStatus.PENDING)
+    pending, late = _split_pending(ctx, await ctx.data.list_approvals(ctx.tenant_id, ApprovalStatus.PENDING))
     done = [a for a in await ctx.data.list_approvals(ctx.tenant_id) if a.status is not ApprovalStatus.PENDING]
     done.sort(key=lambda a: a.decided_at or a.requested_at, reverse=True)
-    flash = {"approved": "Đã duyệt.", "rejected": "Đã từ chối.", "error": "Không ghi được quyết định (đã xử lý hoặc không tồn tại)."}.get(msg)
-    return _render(request, s, "approvals.html", "Duyệt", "/approvals", pending=pending, done=done[:30], flash=flash, flash_bad=msg == "error")
+    return _render(request, s, "approvals.html", "Duyệt", "/approvals", pending=pending, late=late, done=done[:30], flash=FLASH.get(msg), flash_bad=msg in ("error", "expired"))
 
 
 @router.post("/approvals/{approval_id}/decision")
@@ -348,9 +435,11 @@ async def approval_decide(request: Request, approval_id: str, sf: tuple[Sess, di
         decided_by=f"human:{s.user}", comment=comment or None,
     )
     try:
-        await ctx.decide(dec)
+        updated = await ctx.decide(dec)
     except (KeyError, ValueError):
         return _redirect(request, s, "/approvals?msg=error")
+    if updated.status is ApprovalStatus.EXPIRED:  # store đánh EXPIRED thay vì ghi quyết định: không được báo "Đã duyệt"
+        return _redirect(request, s, "/approvals?msg=expired")
     return _redirect(request, s, f"/approvals?msg={'approved' if choice == 'approve' else 'rejected'}")
 
 
@@ -371,7 +460,7 @@ async def evidence_detail(request: Request, task_id: str, s: Sess = Depends(requ
 
 @router.get("/workers")
 async def workers(request: Request, s: Sess = Depends(require_user)) -> Response:
-    return _render(request, s, "workers.html", "Workers / VM", "/workers", rows=await _workers_view(_ctx(request)))
+    return _render(request, s, "workers.html", "Máy chạy (Worker)", "/workers", rows=await _workers_view(_ctx(request)))
 
 
 async def _stats(ctx: WorkbenchContext):
@@ -381,7 +470,7 @@ async def _stats(ctx: WorkbenchContext):
 @router.get("/agents")
 async def agents(request: Request, s: Sess = Depends(require_user)) -> Response:
     stats = await _stats(_ctx(request))
-    return _render(request, s, "agents.html", "Agents / Models", "/agents", stats=sorted(stats, key=lambda x: (x.task_family.value, x.model)))
+    return _render(request, s, "agents.html", "Tác tử / Mô hình", "/agents", stats=sorted(stats, key=lambda x: (x.task_family.value, x.model)))
 
 
 @router.get("/costs")
@@ -401,7 +490,7 @@ async def errors(request: Request, s: Sess = Depends(require_user)) -> Response:
     ev = await _all_evidence(ctx, tasks)
     failed = [t for t in tasks if t.status in (TaskStatus.FAILED, TaskStatus.ROLLED_BACK)]
     return _render(
-        request, s, "errors.html", "Lỗi / Retry / Rollback", "/errors", failed=failed,
+        request, s, "errors.html", "Lỗi / Thử lại / Hoàn tác", "/errors", failed=failed,
         retried=[e for e in ev if e.retries > 0], rolled=[e for e in ev if e.rollback_performed], bad=[e for e in ev if e.final_outcome is Outcome.VERIFIED_FAILURE],
     )
 
@@ -421,7 +510,7 @@ async def learning(request: Request, s: Sess = Depends(require_user)) -> Respons
 @router.get("/audit")
 async def audit(request: Request, s: Sess = Depends(require_user)) -> Response:
     ctx = _ctx(request)
-    return _render(request, s, "audit.html", "Kiểm toán", "/audit", entries=await ctx.audit_provider(ctx.tenant_id) if ctx.audit_provider else [])
+    return _render(request, s, "audit.html", "Kiểm toán", "/audit", entries=await ctx.audit_provider(ctx.tenant_id) if ctx.audit_provider else [], audit_connected=ctx.audit_provider is not None)
 
 
 @router.get("/brain")
@@ -429,13 +518,13 @@ async def brain(request: Request, q: str = "", s: Sess = Depends(require_user)) 
     ctx = _ctx(request)
     q = q.strip()[:300]
     hits = await ctx.retriever.retrieve(RetrievalQuery(tenant_id=ctx.tenant_id, text=q, top_k=10)) if (q and ctx.retriever) else []
-    return _render(request, s, "brain.html", "Project Brain", "/brain", q=q, hits=hits, enabled=ctx.retriever is not None)
+    return _render(request, s, "brain.html", "Bộ nhớ dự án", "/brain", q=q, hits=hits, enabled=ctx.retriever is not None)
 
 
 @router.get("/ledger")
 async def ledger(request: Request, s: Sess = Depends(require_user)) -> Response:
     ctx = _ctx(request)
-    return _render(request, s, "ledger.html", "Decision Ledger", "/ledger", items=views.parse_ledger(ctx.ledger_path))
+    return _render(request, s, "ledger.html", "Sổ quyết định", "/ledger", items=views.parse_ledger(ctx.ledger_path))
 
 
 _ = RiskLevel  # re-export cho template/tests

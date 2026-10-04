@@ -33,7 +33,7 @@ from zeus.policy.jsonschema import validate
 class AuditSink(Protocol):
     async def record(
         self, *, tenant_id: str, actor: str, action: str, subject_id: str | None = None, risk: str | None = None,
-        task_id: str | None = None, trace_id: str | None = None, details: dict[str, Any] | None = None,
+        task_id: str | None = None, trace_id: str | None = None, details: dict[str, Any] | None = None, subject_type: str = "action",
     ) -> None: ...
 
 
@@ -53,15 +53,15 @@ class PgAudit:
 
     async def record(
         self, *, tenant_id: str, actor: str, action: str, subject_id: str | None = None, risk: str | None = None,
-        task_id: str | None = None, trace_id: str | None = None, details: dict[str, Any] | None = None,
+        task_id: str | None = None, trace_id: str | None = None, details: dict[str, Any] | None = None, subject_type: str = "action",
     ) -> None:
         from zeus.storage.db import aconnect
 
         async with await aconnect(self.dsn, autocommit=True) as conn:
             await conn.execute(
                 "INSERT INTO audit_log (tenant_id, actor, action, subject_type, subject_id, risk, trace_id, task_id, details)"
-                " VALUES (%s,%s,%s,'action',%s,%s,%s,%s,%s::jsonb)",
-                (tenant_id, actor, action, subject_id, risk, trace_id, task_id, json.dumps(details or {}, default=str)),
+                " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)",
+                (tenant_id, actor, action, subject_type, subject_id, risk, trace_id, task_id, json.dumps(details or {}, default=str)),
             )
 
 

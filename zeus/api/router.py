@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -33,6 +34,8 @@ from zeus.contracts.models import (
 )
 from zeus.gateway.gateway import EventGateway
 from zeus.gateway.store import ControlStore, UnknownTenant
+
+log = logging.getLogger(__name__)
 
 _TENANT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,62}$")
 
@@ -103,6 +106,7 @@ class ControlServices:
     outcomes: OutcomeRecorder
     workers: WorkerRegistry
     workflows: WorkflowControl
+    audit: Any = None  # AuditSink (tuỳ chọn): ghi mọi quyết định duyệt vào audit_log (UX-02)
 
 
 class DecisionBody(ZeusModel):
@@ -112,6 +116,20 @@ class DecisionBody(ZeusModel):
 
 
 _TERMINAL = (TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.ROLLED_BACK)
+
+
+async def audit_decision(audit: Any, req: Any, decision: ApprovalDecision, updated: Any) -> None:
+    """Ghi audit_log cho quyết định duyệt (ai duyệt gì, kết quả thật gồm cả EXPIRED). Lỗi ghi audit không được làm mất quyết định đã lưu."""
+    if audit is None:
+        return
+    try:
+        await audit.record(
+            tenant_id=req.tenant_id, actor=decision.decided_by, action="approval.decide", subject_id=req.approval_id, subject_type="approval",
+            risk=req.risk.value, task_id=req.task_id,
+            details={"status": updated.status.value, "requested": decision.status.value, "comment": decision.comment, "action": req.action.name},
+        )
+    except Exception:  # noqa: BLE001
+        log.exception("không ghi được audit cho quyết định duyệt %s", req.approval_id)
 
 
 async def task_finished_expire(store: ControlStore, approvals: Any, req: Any) -> bool:
@@ -235,6 +253,7 @@ async def decide_approval(approval_id: str, body: DecisionBody, request: Request
         updated = await s.approvals.decide(ApprovalDecision(approval_id=approval_id, status=body.status, decided_by=body.decided_by, comment=body.comment))
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
+    await audit_decision(s.audit, req, ApprovalDecision(approval_id=approval_id, status=body.status, decided_by=body.decided_by, comment=body.comment), updated)
     if updated.task_id and updated.status in (ApprovalStatus.APPROVED, ApprovalStatus.REJECTED):
         await s.workflows.signal_approval(updated.task_id, ApprovalDecision(approval_id=approval_id, status=updated.status, decided_by=body.decided_by, comment=body.comment))  # type: ignore[arg-type]
     return {"approval_id": approval_id, "status": updated.status.value}

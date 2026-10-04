@@ -84,7 +84,7 @@ def test_overview_numbers(authed: World):
 
 def test_workers_page_flags_stale(authed: World):
     t = authed.client.get("/wb/workers").text
-    assert "w-code-1" in t and "mất tín hiệu" in t
+    assert "w-code-1" in t and "Mất tín hiệu" in t
 
 
 def test_workflow_detail_draws_svg_dag(authed: World):
@@ -175,8 +175,9 @@ def test_post_without_session_cookie_forbidden(world: World):
 
 
 def test_command_ingests_untrusted_free_workbench_event(authed: World):
-    r = authed.client.post("/wb/command", data={"text": "Sửa lỗi in hoá đơn", "family": "erp_bug", "csrf_token": authed.csrf()})
-    assert r.status_code == 200 and "tsk_demo_new" in r.text
+    r = authed.client.post("/wb/command", data={"text": "Sửa lỗi in hoá đơn", "family": "erp_bug", "csrf_token": authed.csrf()}, follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/wb/command?sent=tsk_demo_new"  # Post/Redirect/Get (UX-03)
+    assert "tsk_demo_new" in authed.client.get(r.headers["location"]).text
     (ev,) = authed.ctx.demo["ingested"]  # type: ignore[attr-defined]
     assert ev.channel is Channel.WORKBENCH and ev.kind is EventKind.COMMAND and ev.text == "Sửa lỗi in hoá đơn"
     assert ev.metadata["requested_family"] == "erp_bug" and ev.sender.channel_user_id == "operator"

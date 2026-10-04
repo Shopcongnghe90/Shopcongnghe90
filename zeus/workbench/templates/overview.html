@@ -3,24 +3,24 @@
 {% block body %}
 <div class="grid">
   <div class="card stat"><div class="k">Sức khoẻ hệ thống</div><div class="v h-{{ health }}">{{ {'ok':'Ổn định','warn':'Cần chú ý','bad':'Có sự cố'}[health] }}</div></div>
-  <div class="card stat"><div class="k">Workflow đang chạy</div><div class="v">{{ running|length }}</div></div>
+  <div class="card stat"><div class="k">Việc đang chạy</div><div class="v">{{ running|length }}</div></div>
   <a class="card stat" href="{{ prefix }}/approvals"><div class="k">Chờ duyệt</div><div class="v">{{ pending_n }}</div></a>
   <div class="card stat"><div class="k">Chi phí hôm nay</div><div class="v">{{ cost_today|usd }}</div></div>
   <div class="card stat"><div class="k">Workers trực tuyến</div><div class="v">{{ workers_online }}/{{ workers_total }}</div></div>
-  <div class="card stat"><div class="k">Task thất bại</div><div class="v">{{ counts['FAILED'] }}</div></div>
+  <div class="card stat"><div class="k">Việc thất bại</div><div class="v">{{ counts['FAILED'] }}</div></div>
 </div>
-<h2>Workflow đang chạy</h2>
+<h2>Việc đang chạy</h2>
 <div class="tablewrap"><table>
-<thead><tr><th>Task</th><th>Nhóm</th><th>Rủi ro</th><th>Trạng thái</th></tr></thead>
+<thead><tr><th>Việc</th><th>Nhóm</th><th>Rủi ro</th><th>Trạng thái</th></tr></thead>
 <tbody>
-{% for t in running %}<tr><td><a href="{{ prefix }}/workflows/{{ t.task_id }}">{{ t.goal }}</a></td><td>{{ t.family|val }}</td><td>{{ risk(t.risk) }}</td><td>{{ badge(t.status) }}</td></tr>
+{% for t in running %}<tr><td data-label="Việc"><a href="{{ prefix }}/workflows/{{ t.task_id }}">{{ t.goal }}</a></td><td data-label="Nhóm">{{ t.family|fam }}</td><td data-label="Rủi ro">{{ risk(t.risk) }}</td><td data-label="Trạng thái">{{ badge(t.status) }}</td></tr>
 {% else %}<tr><td colspan="4" class="muted">Không có workflow đang chạy.</td></tr>{% endfor %}
 </tbody></table></div>
 <h2>Chờ duyệt</h2>
 <div class="tablewrap"><table>
 <thead><tr><th>Mô tả</th><th>Rủi ro</th><th>Yêu cầu lúc</th></tr></thead>
 <tbody>
-{% for a in pending %}<tr><td><a href="{{ prefix }}/approvals">{{ a.summary_vi }}</a></td><td>{{ risk(a.risk) }}</td><td>{{ a.requested_at|dt }}</td></tr>
+{% for a in pending %}<tr><td data-label="Mô tả"><a href="{{ prefix }}/approvals">{{ a.summary_vi }}</a></td><td data-label="Rủi ro">{{ risk(a.risk) }}</td><td data-label="Yêu cầu lúc">{{ a.requested_at|dt }}</td></tr>
 {% else %}<tr><td colspan="3" class="muted">Không có yêu cầu nào đang chờ.</td></tr>{% endfor %}
 </tbody></table></div>
 {% endblock %}

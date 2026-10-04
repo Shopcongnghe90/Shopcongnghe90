@@ -126,6 +126,15 @@ sudo install -m 0644 <gói>/zeus_worker/deploy/zeus-worker.service /etc/systemd/
 Bước "Chạy kiểm thử" của playbook là action `test.run`: worker chỉ nhận khi `executors.test_repo` (nằm trong
 `repo_roots`) được cấu hình. Thu hồi: `python -m zeus.app.admin revoke-worker-tokens w-code-1`.
 
+Các bước kiểm chứng có tham số (`http.check`, `file.checksum`, `repo.tests.run`) chỉ được planner tự sinh khi yêu cầu nêu
+URL/tên miền/đường dẫn **nằm trong allowlist ở cả hai phía**: `params:` trong `config/policy.yaml` (control; Policy Engine
+từ chối ngoài allowlist, luật `P-PARAM-ALLOWLIST`) và `executors.http_allow_domains/file_roots/repo_roots` trong
+`worker.toml`. Allowlist rỗng (mặc định) = không bước nào được sinh, các bước đó là bước thủ công.
+
+Kết nối Postgres: mỗi tiến trình (API, control-worker) giữ một pool tối đa `ZEUS_DB_POOL_MAX` (mặc định 10) kết nối;
+`/internal/system` trả `db_pool` (created/reused/in_use/timeouts) để theo dõi. Index HNSW cho pgvector do migration 203 tạo
+(256 chiều); đổi số chiều embedding thì gọi `PgMemoryStore.ensure_hnsw_index(dim)`.
+
 ## 10. Kiểm tra sau cài
 
 ```bash

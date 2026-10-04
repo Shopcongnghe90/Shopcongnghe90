@@ -1,4 +1,4 @@
-/* ZEUS Workbench — JS thuần (menu di động, sáng/tối, xác nhận từ chối). Không phụ thuộc bên ngoài. */
+/* ZEUS Workbench — JS thuần (menu di động, sáng/tối, xác nhận duyệt R2/R3, bắt buộc lý do khi từ chối). Không phụ thuộc bên ngoài. */
 (function () {
   "use strict";
   var root = document.documentElement;
@@ -27,6 +27,10 @@
   document.querySelectorAll("form.approval, .approval form").forEach(function (f) {
     f.addEventListener("submit", function (ev) {
       var btn = ev.submitter;
+      if (btn && btn.dataset && btn.dataset.confirm && !window.confirm(btn.dataset.confirm)) {
+        ev.preventDefault();
+        return;
+      }
       var reason = f.querySelector("input[name=comment]");
       if (btn && btn.value === "reject" && reason && reason.value.trim().length < 3) {
         ev.preventDefault();

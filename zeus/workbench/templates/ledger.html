@@ -2,6 +2,6 @@
 {% from "_macros.html" import badge, risk %}
 {% block body %}
 {% for i in items %}
-<div class="card"><strong>{{ i.id }} — {{ i.title }}</strong> <span class="badge">{{ i.status }}</span><div class="muted">{{ i.date }}</div><p>{{ i.decision }}</p></div>
+<div class="card"><strong>{{ i.id }} — {{ i.title }}</strong> <span class="badge">{{ i.status|adr_status }}</span><div class="muted">{{ i.date }}</div><p>{{ i.decision }}</p></div>
 {% else %}<p class="muted">Không đọc được Decision Ledger.</p>{% endfor %}
 {% endblock %}

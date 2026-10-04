@@ -20,7 +20,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from zeus.api.router import ControlServices, NullWorkflowControl, TemporalWorkflowControl, WorkflowControl, task_finished_expire
+from zeus.api.router import ControlServices, NullWorkflowControl, TemporalWorkflowControl, WorkflowControl, audit_decision, task_finished_expire
 from zeus.brain.embeddings import HashingEmbedding
 from zeus.brain.retrieval import PgBrainRetriever
 from zeus.brain.store import PgMemoryStore
@@ -97,15 +97,33 @@ def worker_action_specs() -> list[ActionSpec]:
     """Typed action chạy trên thin worker (zeus_worker executors), đăng ký phía control qua RemoteToolProvider để
     policy/approval/audit vẫn ở control (ADR-011). Capability ``action:<tên>`` do worker tự quảng bá khi có executor.
 
-    Chỉ đăng ký action mà planner điền được tham số (planner chỉ có goal/task_id): ``test.run`` (bộ test cấu hình sẵn
-    trên worker). ``http.check``/``file.checksum``/``repo.tests.run`` cần tham số cụ thể (url/path/repo) mà playbook
-    chưa sinh được => để là bước thủ công cho tới khi planner hỗ trợ tham số (EXACT NEXT ACTION trong MASTER_STATE).
+    ``test.run``/``noop.echo`` không nhận tham số tự do. ``http.check``/``file.checksum``/``repo.tests.run`` cần tham số cụ thể:
+    planner chỉ sinh chúng từ entity của Intent đã qua allowlist (``params:`` trong policy.yaml, ADR-022); Policy Engine kiểm lại
+    (P-PARAM-ALLOWLIST) và worker kiểm theo cấu hình riêng. Allowlist rỗng => không bước nào được sinh tự động.
     """
     return [
         ActionSpec(
             name="test.run", description="Chạy bộ test đã cấu hình trên worker; bằng chứng TEST_RESULT", risk=RiskLevel.R0,
             input_schema={"type": "object", "properties": {"goal": {"type": "string"}, "task_id": {"type": "string"}}},
             idempotent=True, timeout_s=900, required_capabilities=["action:test.run"], owner="C",
+        ),
+        ActionSpec(
+            name="http.check", description="GET một URL trong allowlist domain, so mã trạng thái; bằng chứng HTTP_CHECK", risk=RiskLevel.R0,
+            input_schema={"type": "object", "required": ["url"], "additionalProperties": False, "properties": {
+                "url": {"type": "string", "maxLength": 2000, "pattern": "^https?://"}, "expect_status": {"type": "integer", "minimum": 100, "maximum": 599}}},
+            idempotent=True, timeout_s=60, required_capabilities=["action:http.check"], owner="C",
+        ),
+        ActionSpec(
+            name="file.checksum", description="SHA-256 của tệp dưới file_roots; so với expected_sha256 nếu có; bằng chứng DATA_MATCH", risk=RiskLevel.R0,
+            input_schema={"type": "object", "required": ["path"], "additionalProperties": False, "properties": {
+                "path": {"type": "string", "maxLength": 1024}, "expected_sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}}},
+            idempotent=True, timeout_s=120, required_capabilities=["action:file.checksum"], owner="C",
+        ),
+        ActionSpec(
+            name="repo.tests.run", description="Chạy pytest trong repo dưới repo_roots của worker; bằng chứng TEST_RESULT", risk=RiskLevel.R1,
+            input_schema={"type": "object", "required": ["repo"], "additionalProperties": False, "properties": {
+                "repo": {"type": "string", "maxLength": 1024}, "target": {"type": "string", "maxLength": 200}}},
+            idempotent=True, timeout_s=900, required_capabilities=["action:repo.tests.run"], owner="C",
         ),
         ActionSpec(
             name="noop.echo", description="Kiểm tra đường dispatch (không side effect)", risk=RiskLevel.R0,
@@ -254,8 +272,9 @@ class PgWorkbenchDataSource:
 class ControlFacade:
     """Ingest + duyệt dùng chung cho Workbench (D) và webhook (D): cùng luồng với Control API (A)."""
 
-    def __init__(self, services: ControlServices) -> None:
+    def __init__(self, services: ControlServices, audit: Any = None) -> None:
         self.s = services
+        self.audit = audit if audit is not None else services.audit
 
     async def ingest(self, event: Event) -> EventIngestResponse:
         res = await self.s.gateway.ingest(event)
@@ -287,6 +306,7 @@ class ControlFacade:
         if await task_finished_expire(self.s.store, self.s.approvals, req):
             raise ValueError(f"task {req.task_id} đã kết thúc; yêu cầu duyệt {req.approval_id} đã hết hạn")
         updated = await self.s.approvals.decide(decision)
+        await audit_decision(self.audit, req, decision, updated)  # UX-02: ai duyệt gì phải có dấu vết kiểm toán
         if updated.task_id and updated.status in (ApprovalStatus.APPROVED, ApprovalStatus.REJECTED):
             await self.s.workflows.signal_approval(updated.task_id, decision.model_copy(update={"status": updated.status}))
         return updated
@@ -311,6 +331,13 @@ class System:
     outcomes: LearningOutcomeRecorder
     schedules: PgScheduleStore
     task_queue: str = TASK_QUEUE_CONTROL
+
+    async def open_pool(self) -> Any:
+        """Mở pool kết nối Postgres dùng chung (ZEUS_DB_POOL_MAX, 0 = tắt) trong event loop hiện tại. Mọi store đi qua
+        ``aconnect`` nên tự dùng pool; gọi lặp lại trong cùng loop trả lại pool đã mở. Trả None nếu tắt."""
+        from zeus.storage.db import open_pool
+
+        return await open_pool(self.dsn, max_size=self.settings.db_pool_max) if self.settings.db_pool_max > 0 else None
 
 
 def _usable_broker(settings: Settings, env: Mapping[str, str], policy: PolicyConfig, store: PgControlStore, ledger: PgBudgetLedger) -> ModelBroker | None:
@@ -389,7 +416,7 @@ def build_system(
     intent, risk = DefaultIntentEngine(model_broker), DefaultRiskEngine()
     deps = ControlDeps(
         intent=intent, risk=risk,
-        planner=DefaultPlanner(model_broker, gateway.list_actions),
+        planner=DefaultPlanner(model_broker, gateway.list_actions, params=policy_cfg.params),
         critic=DefaultCritic(model_broker, gateway.list_actions),
         judge=DeterministicJudge(model_broker),
         gateway=gateway, approvals=approvals, store=store, evidence=evidence, outcomes=outcomes, retriever=retriever,
@@ -398,7 +425,7 @@ def build_system(
     )
     wf = workflows or (TemporalWorkflowControl(temporal_client, task_queue) if temporal_client is not None else NullWorkflowControl())
     control = ControlServices(gateway=EventGateway(store, intent, risk), store=store, approvals=approvals, evidence=evidence,
-                              outcomes=outcomes, workers=registry, workflows=wf)
+                              outcomes=outcomes, workers=registry, workflows=wf, audit=audit)
     facade = ControlFacade(control)
 
     # ---- D: Workbench + hooks

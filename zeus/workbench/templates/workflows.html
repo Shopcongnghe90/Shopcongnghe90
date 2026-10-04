@@ -9,7 +9,7 @@
 <div class="tablewrap"><table>
 <thead><tr><th>Mục tiêu</th><th>Nhóm</th><th>Rủi ro</th><th>Trạng thái</th><th>Tạo lúc</th></tr></thead>
 <tbody>
-{% for t in tasks %}<tr><td><a href="{{ prefix }}/workflows/{{ t.task_id }}">{{ t.goal }}</a></td><td>{{ t.family|val }}</td><td>{{ risk(t.risk) }}</td><td>{{ badge(t.status) }}</td><td>{{ t.created_at|dt }}</td></tr>
+{% for t in tasks %}<tr><td data-label="Mục tiêu"><a href="{{ prefix }}/workflows/{{ t.task_id }}">{{ t.goal }}</a></td><td data-label="Nhóm">{{ t.family|fam }}</td><td data-label="Rủi ro">{{ risk(t.risk) }}</td><td data-label="Trạng thái">{{ badge(t.status) }}</td><td data-label="Tạo lúc">{{ t.created_at|dt }}</td></tr>
 {% else %}<tr><td colspan="5" class="muted">Chưa có task.</td></tr>{% endfor %}
 </tbody></table></div>
 {% endblock %}

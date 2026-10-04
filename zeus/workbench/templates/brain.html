@@ -5,7 +5,7 @@
 {% if not enabled %}<p class="muted">Chưa kết nối Project Brain.</p>{% endif %}
 {% if q %}<h2>Kết quả cho “{{ q }}”</h2>{% endif %}
 {% for h in hits %}
-<div class="card"><strong>{{ h.memory.title or h.memory.kind|val }}</strong> <span class="badge">{{ h.memory.trust|val }}</span> <span class="muted">điểm {{ '%.2f' % h.score }} · {{ h.memory.kind|val }}{% if h.memory.source_ref %} · {{ h.memory.source_ref }}{% endif %}</span>
+<div class="card"><strong>{{ h.memory.title or h.memory.kind|mkind }}</strong> <span class="badge">{{ h.memory.trust|trust }}</span> <span class="muted">điểm {{ '%.2f' % h.score }} · {{ h.memory.kind|mkind }}{% if h.memory.source_ref %} · {{ h.memory.source_ref }}{% endif %}</span>
 <p>{{ h.memory.content[:600] }}</p></div>
 {% else %}{% if q %}<p class="muted">Không có kết quả.</p>{% endif %}{% endfor %}
 {% endblock %}

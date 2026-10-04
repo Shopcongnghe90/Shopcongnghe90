@@ -62,6 +62,7 @@ from zeus.contracts.models import (
     WorkerStatus,
     utcnow,
 )
+from zeus.gateway.gateway import task_entities
 from zeus.gateway.store import ControlStore
 from zeus.intent.engine import DefaultIntentEngine
 from zeus.obs import SpanRecorder, bind_trace, new_trace_id
@@ -189,6 +190,7 @@ class ControlActivities:
                     "trace": _trace(task),
                     "status": TaskStatus.PENDING,
                     "untrusted": task.untrusted or (inp.event is not None and inp.event.untrusted),
+                    "entities": {**task.entities, **task_entities(intent.entities)},
                 }
             )
             await self.d.store.put_task(task)

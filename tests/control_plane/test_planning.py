@@ -46,7 +46,7 @@ async def test_playbook_plan_is_valid_dag_for_every_family_without_model(family,
     rig = await make_rig(models_cfg, policy_cfg)
     task = make_task(family=family)
     plan = await rig.deps.planner.plan(task, ctx(task))
-    assert isinstance(rig.deps.planner, Planner) and plan.planner == "playbook-1"
+    assert isinstance(rig.deps.planner, Planner) and plan.planner == "playbook-2"
     TaskGraph.model_validate(plan.graph.model_dump())  # DAG hợp lệ
     assert plan.graph.nodes and all(n.acceptance for n in plan.graph.nodes) and plan.graph.ready_nodes(set())
     reg = {s.name for s in rig.gateway.list_actions()}
@@ -89,14 +89,14 @@ async def test_bad_model_plan_falls_back_to_playbook(bad, models_cfg, policy_cfg
     rig = await make_rig(models_cfg, policy_cfg, broker=broker_for(models_cfg, policy_cfg, {L: f}))
     task = make_task()
     plan = await rig.deps.planner.plan(task, ctx(task))
-    assert plan.planner == "playbook-1" and plan.graph.nodes
+    assert plan.planner == "playbook-2" and plan.graph.nodes
 
 
 async def test_provider_down_planner_playbook_vs_require_model(models_cfg, policy_cfg):
     down = {L: FakeProvider(L, models=models_cfg.models, fail=True)}
     rig = await make_rig(models_cfg, policy_cfg, broker=broker_for(models_cfg, policy_cfg, down))
     task = make_task()
-    assert (await rig.deps.planner.plan(task, ctx(task))).planner == "playbook-1"
+    assert (await rig.deps.planner.plan(task, ctx(task))).planner == "playbook-2"
     strict = DefaultPlanner(rig.deps.planner.broker, rig.gateway.list_actions, require_model=True)
     from zeus.contracts.interfaces import ProviderUnavailable
 
@@ -108,7 +108,7 @@ async def test_provider_down_planner_playbook_vs_require_model(models_cfg, polic
 async def test_critic_structural_issues(models_cfg, policy_cfg):
     rig = await make_rig(models_cfg, policy_cfg)
     task = make_task()
-    bad = Plan(task_id=task.task_id, planner="playbook-1", graph=TaskGraph(task_id=task.task_id, nodes=[
+    bad = Plan(task_id=task.task_id, planner="playbook-2", graph=TaskGraph(task_id=task.task_id, nodes=[
         TaskNode(node_id="x", title="Làm gì đó nguy hiểm", risk=RiskLevel.R2),  # R2 không action, không acceptance, không verify
     ]))
     c = await rig.deps.critic.critique(bad, ctx(task))
