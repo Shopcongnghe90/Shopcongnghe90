@@ -1,0 +1,26 @@
+# Cấu hình Project Brain (Workstream B). Không chứa secret.
+retrieval:
+  top_k: 8
+  candidate_k: 40
+  token_budget: 4000
+  rrf_k: 60
+embedding:
+  # provider: hashing (offline, mặc định) | openai_compatible (llama.cpp local /v1/embeddings)
+  provider: hashing
+  dim: 256
+  base_url: null   # vd http://10.90.30.20:8080/v1
+  model: null
+  # Embedding tắt/hỏng => lexical-only (không lỗi)
+reranker:
+  provider: lexical   # lexical | http
+  url: null
+handoff:
+  max_bytes: 8192
+retention:   # ngày; kind không có ở đây = giữ vĩnh viễn. Chính sách pháp lý cần duyệt (gate G14) trước khi bật ở production.
+  episodic: 180
+  semantic: 730
+champion_challenger:
+  min_eval_cases: 18
+  min_eval_pass_rate: 0.9
+  min_canary_n: 30
+  max_cost_ratio: 1.0

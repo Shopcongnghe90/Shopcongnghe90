@@ -1,0 +1,914 @@
+{
+  "run_id": "evr_753864c8df39408c9f6c1efabb3b99c9",
+  "candidate": "oracle-fake",
+  "n_cases": 90,
+  "n_passed": 90,
+  "pass_rate": 1.0,
+  "regression_failures": 0,
+  "cost_usd": 0.0,
+  "avg_latency_ms": 0.0,
+  "by_family": {
+    "erp_bug": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "erp_feature": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "website_edit": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "website_build": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "frontend": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "backend": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "database": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "customer_support": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "zalo_issue": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "facebook_issue": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "shopee_issue": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "domain_provisioning": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "deployment": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "security": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "visual_qa": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "worker_scheduling": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "model_routing": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    },
+    "tool_selection": {
+      "n": 5,
+      "passed": 5,
+      "pass_rate": 1.0
+    }
+  },
+  "results": [
+    {
+      "case_id": "erp_bug-v1-01",
+      "family": "erp_bug",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "erp_bug-v1-02",
+      "family": "erp_bug",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "erp_bug-v1-03",
+      "family": "erp_bug",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "erp_bug-v1-04",
+      "family": "erp_bug",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "erp_bug-v1-05",
+      "family": "erp_bug",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "erp_feature-v1-01",
+      "family": "erp_feature",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "erp_feature-v1-02",
+      "family": "erp_feature",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "erp_feature-v1-03",
+      "family": "erp_feature",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "erp_feature-v1-04",
+      "family": "erp_feature",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "erp_feature-v1-05",
+      "family": "erp_feature",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "website_edit-v1-01",
+      "family": "website_edit",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "website_edit-v1-02",
+      "family": "website_edit",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "website_edit-v1-03",
+      "family": "website_edit",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "website_edit-v1-04",
+      "family": "website_edit",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "website_edit-v1-05",
+      "family": "website_edit",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "website_build-v1-01",
+      "family": "website_build",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "website_build-v1-02",
+      "family": "website_build",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "website_build-v1-03",
+      "family": "website_build",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "website_build-v1-04",
+      "family": "website_build",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "website_build-v1-05",
+      "family": "website_build",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "frontend-v1-01",
+      "family": "frontend",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "frontend-v1-02",
+      "family": "frontend",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "frontend-v1-03",
+      "family": "frontend",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "frontend-v1-04",
+      "family": "frontend",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "frontend-v1-05",
+      "family": "frontend",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "backend-v1-01",
+      "family": "backend",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "backend-v1-02",
+      "family": "backend",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "backend-v1-03",
+      "family": "backend",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "backend-v1-04",
+      "family": "backend",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "backend-v1-05",
+      "family": "backend",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "database-v1-01",
+      "family": "database",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "database-v1-02",
+      "family": "database",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "database-v1-03",
+      "family": "database",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "database-v1-04",
+      "family": "database",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "database-v1-05",
+      "family": "database",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "customer_support-v1-01",
+      "family": "customer_support",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "customer_support-v1-02",
+      "family": "customer_support",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "customer_support-v1-03",
+      "family": "customer_support",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "customer_support-v1-04",
+      "family": "customer_support",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "customer_support-v1-05",
+      "family": "customer_support",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "zalo_issue-v1-01",
+      "family": "zalo_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "zalo_issue-v1-02",
+      "family": "zalo_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "zalo_issue-v1-03",
+      "family": "zalo_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "zalo_issue-v1-04",
+      "family": "zalo_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "zalo_issue-v1-05",
+      "family": "zalo_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "facebook_issue-v1-01",
+      "family": "facebook_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "facebook_issue-v1-02",
+      "family": "facebook_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "facebook_issue-v1-03",
+      "family": "facebook_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "facebook_issue-v1-04",
+      "family": "facebook_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "facebook_issue-v1-05",
+      "family": "facebook_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "shopee_issue-v1-01",
+      "family": "shopee_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "shopee_issue-v1-02",
+      "family": "shopee_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "shopee_issue-v1-03",
+      "family": "shopee_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "shopee_issue-v1-04",
+      "family": "shopee_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "shopee_issue-v1-05",
+      "family": "shopee_issue",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "domain_provisioning-v1-01",
+      "family": "domain_provisioning",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "domain_provisioning-v1-02",
+      "family": "domain_provisioning",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "domain_provisioning-v1-03",
+      "family": "domain_provisioning",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "domain_provisioning-v1-04",
+      "family": "domain_provisioning",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "domain_provisioning-v1-05",
+      "family": "domain_provisioning",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "deployment-v1-01",
+      "family": "deployment",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "deployment-v1-02",
+      "family": "deployment",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "deployment-v1-03",
+      "family": "deployment",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "deployment-v1-04",
+      "family": "deployment",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "deployment-v1-05",
+      "family": "deployment",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "security-v1-01",
+      "family": "security",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "security-v1-02",
+      "family": "security",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "security-v1-03",
+      "family": "security",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "security-v1-04",
+      "family": "security",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "security-v1-05",
+      "family": "security",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "visual_qa-v1-01",
+      "family": "visual_qa",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "visual_qa-v1-02",
+      "family": "visual_qa",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "visual_qa-v1-03",
+      "family": "visual_qa",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "visual_qa-v1-04",
+      "family": "visual_qa",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "visual_qa-v1-05",
+      "family": "visual_qa",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "worker_scheduling-v1-01",
+      "family": "worker_scheduling",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "worker_scheduling-v1-02",
+      "family": "worker_scheduling",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "worker_scheduling-v1-03",
+      "family": "worker_scheduling",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "worker_scheduling-v1-04",
+      "family": "worker_scheduling",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "worker_scheduling-v1-05",
+      "family": "worker_scheduling",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "model_routing-v1-01",
+      "family": "model_routing",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "model_routing-v1-02",
+      "family": "model_routing",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "model_routing-v1-03",
+      "family": "model_routing",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "model_routing-v1-04",
+      "family": "model_routing",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "model_routing-v1-05",
+      "family": "model_routing",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "tool_selection-v1-01",
+      "family": "tool_selection",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "tool_selection-v1-02",
+      "family": "tool_selection",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "tool_selection-v1-03",
+      "family": "tool_selection",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "tool_selection-v1-04",
+      "family": "tool_selection",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    },
+    {
+      "case_id": "tool_selection-v1-05",
+      "family": "tool_selection",
+      "source": "seed",
+      "passed": true,
+      "detail": "",
+      "latency_ms": 0,
+      "cost_usd": 0.0
+    }
+  ]
+}
