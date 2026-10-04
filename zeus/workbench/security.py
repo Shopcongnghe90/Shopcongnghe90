@@ -102,7 +102,7 @@ class AuthConfig:
     def login(self, client: str, username: str, password: str, now: float | None = None) -> bool:
         if self.locked(client, now):
             return False
-        ok = hmac.compare_digest(username, self.username) & verify_password(password, self.password_hash)
+        ok = hmac.compare_digest(username.encode("utf-8"), self.username.encode("utf-8")) & verify_password(password, self.password_hash)
         if not ok:
             self._failures[client].append(now or time.time())
         else:

@@ -4,7 +4,7 @@
 
 | Trường | Giá trị |
 |---|---|
-| Cập nhật | 2026-10-04 (review round 2 + Phase 2 vòng 1) |
+| Cập nhật | 2026-10-04 (review cuối + handoff Cloud Exit) |
 | Phase | **1 hoàn tất (kiểm chứng trong sandbox, chưa trên host thật) + Phase 2 vòng 1: tham số typed từ Intent, pool Postgres, HNSW, UX Workbench vòng 2** |
 | Nhánh | `claude/cool-shannon-5kj313` (chưa push) |
 | Kiến trúc | `docs/architecture/ZEUSVN_BRAIN_MASTER_ARCHITECTURE.md` v1.0 (khoá) |
@@ -23,6 +23,7 @@
 | WS D Workbench & Integrations | `010db2b`, merge `d16c447` | migration 401; Workbench `/wb` 13 trang, `/hooks` Zalo/Messenger/Shopee, outbound R2, Odoo JSON-2, domain/site |
 | **Tích hợp hệ thống** | commit "ZeusVN Brain: system integration Phase 1" | xem mục 1.1 |
 | Review round 2: SEC-1..5, R1..R11 | `0c4b4dd` | ADR-021 (idempotency action external bền, migration 102, đã gồm trong đây) |
+| Review cuối: SEC-7, SEC-8 | commit "final review fixes + Cloud Exit handoff" | ADR-023; `tests/shared/test_final_review.py` |
 | **Phase 2 vòng 1 + UX vòng 2** | commit "ZeusVN Brain: Phase 2 gaps + UX fixes (round 2)" | xem mục 1.2, ADR-022 |
 
 ### 1.1 Tích hợp (integrator)
@@ -46,8 +47,8 @@
 
 | Bằng chứng | Kết quả |
 |---|---|
-| `/opt/zeus/venv/bin/python -m pytest -q` (toàn suite, sau Phase 2 vòng 1 + UX vòng 2) | **480 passed, 2 skipped** (skip: `test_live_odoo_staging_smoke` marker `live`; `shellcheck` khi gọi pytest trực tiếp không có trên PATH — chạy qua `scripts/test.sh`/`cloud_exit_check.sh` thì chạy thật). Trước Phase 2: 377 passed (commit `749b4dc`) |
-| `scripts/cloud_exit_check.sh` (env sạch, `CLAUDE_CLOUD_AVAILABLE=false`) | BUILD PASS · TEST PASS (481 passed, 1 skipped) · WORKFLOW PASS (6) · MODEL_FALLBACK PASS (5) · PROJECT_BRAIN PASS (3) · WORKER_CONTROL PASS (7) · EVIDENCE PASS (9) — **7/7 PASS** |
+| `/opt/zeus/venv/bin/python -m pytest -q` (toàn suite, sau review cuối, 2026-10-04) | **482 passed, 2 skipped** (skip: `test_live_odoo_staging_smoke` marker `live`; `shellcheck` khi gọi pytest trực tiếp không có trên PATH — chạy qua `scripts/test.sh`/`cloud_exit_check.sh` thì chạy thật). Trước Phase 2: 377 passed (commit `749b4dc`) |
+| `scripts/cloud_exit_check.sh` (env sạch, `CLAUDE_CLOUD_AVAILABLE=false`) | BUILD PASS · TEST PASS (483 passed, 1 skipped) · WORKFLOW PASS (6) · MODEL_FALLBACK PASS (5) · PROJECT_BRAIN PASS (3) · WORKER_CONTROL PASS (7) · EVIDENCE PASS (9) — **7/7 PASS** |
 | `tests/shared/test_e2e_system.py::test_e2e_event_to_worker_to_evidence_to_workbench` | POST `/api/v1/events` → TaskWorkflow (Temporal thật, chạy bởi `worker_main.run`) → scheduler chọn `w-e2e` (ScheduleDecision lưu PG) → zeus_worker long-poll `/worker/v1` chạy `test.run` (pytest thật) → log artifact + kết quả → async completion → Judge PASS → EvidenceRecord VERIFIED_SUCCESS (strong, artifact link) + outcomes + dataset_records VERIFIED + nhãn outcome vào schedule_decisions → `/wb/workflows`, `/wb/workflows/<id>` (DAG SVG), `/wb/evidence/<id>`, `/wb/workers` hiển thị đúng; idempotency event; tenant khác đọc evidence = 404 |
 | `test_e2e_r2_blocked_until_approval_decision` | Task deployment chờ duyệt bước R2: 0 assignment, 0 evidence, 0 node chạy trong lúc chờ; tenant khác duyệt = 404; duyệt qua Workbench (CSRF) → chạy worker → PASS, `human_intervention=true` |
 | `test_e2e_r2_rejected_never_dispatches` | Từ chối qua Control API → không assignment nào, task FAILED/CANCELLED |
@@ -74,7 +75,39 @@ Không có test hay hạng mục Cloud Exit nào FAIL. Ghi nhận trung thực c
 
 ## 5. ACTIVE WORK
 
-Review round 2 (SEC-1..5, R1..R11 — ADR-021) và Phase 2 vòng 1 + UX vòng 2 (ADR-022) đã sửa, đã commit trên nhánh. Chưa push. Không có việc code dang dở.
+Không còn. Mọi việc đã commit trên nhánh `claude/cool-shannon-5kj313` (chưa push).
+
+### 5.1 SECURITY_FINDINGS
+
+Đã sửa (có test hồi quy): SEC-1 (lộ token trong log), SEC-2 (cổng duyệt theo rủi ro task), SEC-3 (task untrusted chỉ tự chạy `*.read/get/list/search/check`), SEC-4 (backup), SEC-5 (`required_approvers > 1` bị từ chối), SEC-7 (login tên non-ASCII không còn TypeError, so sánh theo bytes UTF-8), SEC-8 (API dev không token: chỉ nhận từ loopback hoặc khi đặt rõ `ZEUS_ALLOW_NO_TOKEN=1`, ngược lại 401; staging/prod vẫn 503 fail closed). Review cuối: 0 finding; quét secret sạch trên cây và toàn lịch sử.
+
+Còn mở (known gaps / open items):
+
+| ID | Mức | File | Lý do để lại |
+|---|---|---|---|
+| SEC-6 | low | `zeus/channels` (Shopee push) | Push thiếu timestamp vẫn nhận; chuỗi ký Shopee chưa đối chiếu tài khoản thật, sửa sau khi có `live` test |
+| R12 | low | `zeus/workers/registry.py` | Heartbeat ghi đè trạng thái DRAINING; ảnh hưởng nhỏ, cần quyết định hành vi drain |
+| UX-09 | low | `zeus/workbench/router.py` | Lỗi trả JSON thô thay vì trang lỗi; chỉ thẩm mỹ |
+| UX-10 | low | `zeus/workbench` (chi phí) | Ngày tính theo UTC, chưa theo múi giờ VN |
+| UX-11 | low | template Workbench | Menu điện thoại vẫn nhận Tab, thiếu skip-link (a11y) |
+| UX-12 | low | trang Brain | Thiếu trạng thái hướng dẫn khi rỗng |
+| Runbook §7 | info | `docs/runbooks/SERVER_BOOTSTRAP.md` dòng ~94 | Comment liệt kê migration thiếu 102 và 203; runner vẫn áp dụng đủ |
+
+Ghi chú SEC-8: dev sau reverse proxy cùng máy sẽ thấy client là loopback; mọi triển khai thật phải đặt `ZEUS_API_TOKEN` và `ZEUS_ENV=staging|prod`.
+
+### 5.2 CLOUD_EXIT_STATUS
+
+| Hạng mục | Kết quả |
+|---|---|
+| BUILD | PASS |
+| TEST | PASS (483 passed, 1 skipped) |
+| WORKFLOW | PASS (6) |
+| MODEL_FALLBACK | PASS (5) |
+| PROJECT_BRAIN | PASS (3) |
+| WORKER_CONTROL | PASS (7) |
+| EVIDENCE | PASS (9) |
+
+Điều kiện: source đã commit đầy đủ (người dùng push lên remote tự quản — CHƯA push từ phiên này) · không secret nào chỉ tồn tại trên cloud (quét secret sạch) · không phụ thuộc runtime vào Claude Cloud (audit grep sạch; Anthropic chỉ là provider tuỳ chọn, mặc định không key) · build path, bootstrap, migration, rollback, test suite đều có tài liệu (`docs/runbooks/SERVER_BOOTSTRAP.md` §2-12, `scripts/test.sh`, `scripts/cloud_exit_check.sh`).
 
 ## 6. Tóm tắt workstream Phase 1 (thay cho REPORT.md bị chặn)
 
@@ -85,13 +118,16 @@ Review round 2 (SEC-1..5, R1..R11 — ADR-021) và Phase 2 vòng 1 + UX vòng 2 
 | C | 66 passed (`tests/workers`) | lease hết hạn có thể chạy trùng (cần idempotency_key); LearnedScorer là stub; ZEUS_G1_DUYET chỉ kiểm có mặt |
 | D | 86 passed, 1 skipped live (`tests/workbench_channels`) | phiên cookie ký không thu hồi từng phiên; khoá đăng nhập theo IP trong bộ nhớ; định dạng Shopee/Zalo cần đối chiếu thật |
 
-## 7. EXACT NEXT ACTION
+## 7. EXACT_SERVER_NEXT_ACTION
 
-1. Người: đóng gate **G1/G2/G3** (số đo ERP 7 ngày, kế hoạch dry-run + rollback) rồi tạo VM `zeus-core` và chạy `docs/runbooks/SERVER_BOOTSTRAP.md` mục 2–10; ghi kết quả thật vào mục 2/4 file này.
-2. Phase 2 (code, còn lại, làm được ngay trong repo): Temporal Server + Postgres persistence; `ModelRequest` có risk/complexity (CCR A-3); provider cho `db.*`/`deploy.*`/`dns.*`/`code.apply_patch` để các bước playbook còn lại thôi là thủ công; planner dùng thêm entity (order_id dạng mã chữ `SO...` qua `name_search`, tên repo -> đường dẫn); đa người duyệt thật (ADR mới) nếu muốn `required_approvers > 1`; đo HNSW/pool trên tải thật.
-   Người vận hành bật tham số typed: điền `params:` trong `config/policy.yaml` và `executors.http_allow_domains/file_roots/repo_roots` trong `worker.toml` (xem runbook mục 9).
-3. Kênh: đối chiếu Zalo Bot/OA, Messenger, Shopee với tài khoản thật trên staging (marker `live`), rồi mới bật `enabled`.
-4. Gate **G12** (API key + trần chi tiêu) trước khi bật cloud LLM; G14 trước khi bật retention.
+Chạy trên host ERP (chỉ đọc cho tới khi G1 đóng), ghi kết quả vào mục 4 file này:
+
+1. G3 (CPU/microcode, chỉ đọc): `lscpu | grep -E 'Model name|Flags' ; grep -m1 -E 'microcode|model name' /proc/cpuinfo ; dmesg 2>/dev/null | grep -i microcode`
+2. G2 (RAM ERP, đo 7 ngày): `free -m ; vmstat 60 5 ; ps -eo rss,comm --sort=-rss | head -15` (lặp bằng cron/sar trong 7 ngày; cần RAM dự phòng >= 16 GB sau đỉnh ERP).
+3. G1: có số đo G2/G3 + kế hoạch dry-run và rollback được người duyệt thì mới cài Incus/nftables (`infra/may-ao`).
+4. Tạo VM `zeus-core` theo `infra/may-ao` và `docs/runbooks/SERVER_BOOTSTRAP.md`: §2 gói hệ thống, §3 Postgres 16 + pgvector, §4 Temporal CLI (sha256), §5 clone + venv `/opt/zeus/venv` + `pip install`, §6 secret (`openssl rand`, `python -m zeus.app.admin hash-password`), §7 `pg_dump` rồi `python -m zeus.storage.migrate` (kiểm `--status`), §8-9 systemd + thin worker.
+5. Kiểm sau cài (§10): `scripts/test.sh` và `scripts/cloud_exit_check.sh` phải xanh; `curl /readyz`; đặt `ZEUS_ENV=prod` và `ZEUS_API_TOKEN`.
+6. Sau đó: kênh `live` trên staging, G12 trước cloud LLM, G14 trước retention; Phase 2 còn lại như danh sách cũ (Temporal Server + PG persistence, đa người duyệt, provider `db.*`/`deploy.*`/`dns.*`, đo HNSW/pool).
 
 ## 8. Gates đang mở (chờ người)
 

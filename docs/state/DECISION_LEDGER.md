@@ -184,3 +184,10 @@ Trạng thái: `ACCEPTED` · `PROPOSED` · `SUPERSEDED` · `GATED` (chờ ngư�
 - **Lý do:** Đóng gap Phase 2 giá trị cao trong MASTER_STATE 7.2 mà không nới quyền: tham số tự động chỉ từ entity đã qua allowlist hai lớp; pool + HNSW là hiệu năng; UX vòng 2 là finding của review.
 - **Bằng chứng:** `tests/control_plane/test_typed_params.py`, `tests/control_plane/test_phase2_idempotency.py`, `tests/shared/test_db_pool_hnsw.py`, `tests/shared/test_e2e_system.py::test_e2e_planner_typed_params_http_check_runs_on_worker`, `tests/workbench_channels/test_ux_round2.py`.
 - **Trạng thái:** ACCEPTED
+
+## ADR-023 — Review cuối: sửa SEC-7, SEC-8; handoff Cloud Exit
+- **Ngày:** 2026-10-04
+- **Quyết định:** (1) Đăng nhập Workbench so sánh tên người dùng bằng bytes UTF-8 (tên non-ASCII không còn gây TypeError). (2) `api_auth`: env dev/test không có `ZEUS_API_TOKEN` chỉ nhận client loopback (hoặc `testclient`), mọi client khác bị 401 trừ khi đặt rõ `ZEUS_ALLOW_NO_TOKEN=1`; staging/prod vẫn 503 khi thiếu token. (3) SEC-6, R12, UX-09..12 để lại, ghi ở MASTER_STATE mục 5.1. Không thêm tính năng.
+- **Lý do:** Hai lỗi nhỏ liên quan bảo mật, sửa rẻ; còn lại là low, không chặn Cloud Exit.
+- **Bằng chứng:** `tests/shared/test_final_review.py`; pytest 482 passed 2 skipped; `scripts/cloud_exit_check.sh` 7/7 PASS.
+- **Trạng thái:** ACCEPTED

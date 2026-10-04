@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+import os
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
@@ -30,16 +31,21 @@ if TYPE_CHECKING:
     from zeus.app.system import System
 
 log = logging.getLogger("zeus.app")
+_LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 
 
 def api_auth(settings: Settings) -> Any:
     """Dependency Bearer token cho /api/v1 và /internal (token đọc lúc gọi, so sánh hằng thời gian)."""
 
-    async def check(authorization: str | None = Header(default=None)) -> None:
+    async def check(request: Request, authorization: str | None = Header(default=None)) -> None:
         token = settings.api_token()
         if token is None:
             if settings.env in ("staging", "prod"):
                 raise HTTPException(503, f"chưa cấu hình {settings.api_token_env}")
+            # dev không token (SEC-8): chỉ nhận từ loopback, hoặc khi đặt rõ ZEUS_ALLOW_NO_TOKEN=1.
+            host = request.client.host if request.client else ""
+            if host not in _LOOPBACK and os.environ.get("ZEUS_ALLOW_NO_TOKEN") != "1":
+                raise HTTPException(401, "unauthorized", headers={"WWW-Authenticate": "Bearer"})
             return
         expected = f"Bearer {token.get_secret_value()}"
         if not authorization or not hmac.compare_digest(authorization.encode(), expected.encode()):
