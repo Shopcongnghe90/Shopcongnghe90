@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, risk %}
+{% block body %}
+<div class="card"><strong>{{ task.goal }}</strong> {{ badge(task.status) }}</div>
+{% for e in records %}
+<div class="card">
+  <div>{{ badge(e.final_outcome) }} <span class="muted">xác minh bởi: {{ e.verified_by or '—' }} · trace {{ e.trace_id }}</span></div>
+  <div class="muted">Model: {{ e.model_provider|val if e.model_provider else '—' }}/{{ e.model_name or '—' }} · worker: {{ e.worker_id or '—' }} · retry: {{ e.retries }} · rollback: {{ 'có' if e.rollback_performed else 'không' }} · {{ e.cost_usd|usd }} · {{ e.latency_ms }} ms</div>
+  {% if e.tests %}<h3>Kiểm thử</h3><ul>{% for t in e.tests %}<li><code>{{ t.command }}</code> — đạt {{ t.passed }}, lỗi {{ t.failed }}, bỏ qua {{ t.skipped }}</li>{% endfor %}</ul>{% endif %}
+  <h3>Mục bằng chứng</h3>
+  <ul>{% for it in e.evidence %}<li><span class="badge">{{ it.kind|val }}</span> {{ 'đạt' if it.passed else ('không đạt' if it.passed is false else '—') }} — {{ it.summary }} {% if it.ref %}<code>{{ it.ref }}</code>{% endif %}</li>
+  {% else %}<li class="muted">Không có mục bằng chứng.</li>{% endfor %}</ul>
+  {% if e.human_notes %}<p>Ghi chú người: {{ e.human_notes }}</p>{% endif %}
+</div>
+{% else %}<p class="muted">Chưa có bằng chứng.</p>{% endfor %}
+{% endblock %}

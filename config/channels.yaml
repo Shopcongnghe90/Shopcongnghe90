@@ -1,0 +1,31 @@
+# Cấu hình kênh (owner D). KHÔNG chứa secret: chỉ TÊN biến môi trường chứa secret.
+# Kênh thiếu secret => bị tắt (webhook trả 404), không bao giờ chạy "không xác thực".
+dedupe_ttl_s: 86400
+max_body_bytes: 1048576
+channels:
+  zalo_bot:
+    enabled: true
+    secret_env: ZEUS_ZALO_BOT_SECRET_TOKEN      # so với header X-Bot-Api-Secret-Token (đặt khi setWebhook)
+    token_env: ZEUS_ZALO_BOT_TOKEN              # token gọi API gửi tin (chỉ dùng qua typed action)
+    bot_username: ""                            # điền để nhận @mention trong group
+    api_base: https://bot-api.zaloplatforms.com
+  zalo_oa:
+    enabled: false
+    app_id_env: ZEUS_ZALO_OA_APP_ID
+    secret_env: ZEUS_ZALO_OA_SECRET
+    token_env: ZEUS_ZALO_OA_ACCESS_TOKEN
+    max_age_s: 300
+    api_base: https://openapi.zalo.me             # đường dẫn gửi tin CẦN KIỂM CHỨNG khi bật thật
+  messenger:
+    enabled: false
+    app_secret_env: ZEUS_FB_APP_SECRET
+    verify_token_env: ZEUS_FB_VERIFY_TOKEN
+    token_env: ZEUS_FB_PAGE_TOKEN
+    graph_base: https://graph.facebook.com
+    graph_version: v21.0                        # CẦN KIỂM CHỨNG phiên bản hiện hành trước khi dùng thật
+  shopee:
+    enabled: false
+    push_key_env: ZEUS_SHOPEE_PUSH_KEY
+    push_url: ""                                # URL push đã đăng ký trên Shopee Open Platform (nằm trong chuỗi ký)
+    max_age_s: 600
+# Facebook cá nhân: KHÔNG có adapter (không có API chính thức, điều khoản cấm tự động hoá) — ADR-008.

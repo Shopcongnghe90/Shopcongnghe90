@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block body %}
+{% if not configured %}
+<div class="card bad">Chưa cấu hình mật khẩu Workbench (biến môi trường <code>ZEUS_WB_PASSWORD_HASH</code>). Đăng nhập đang bị khoá.</div>
+{% endif %}
+{% if error %}<div class="card bad" role="alert">{{ error }}</div>{% endif %}
+<form method="post" action="{{ prefix }}/login" class="card form narrow">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+  <label>Tên đăng nhập <input name="username" autocomplete="username" required></label>
+  <label>Mật khẩu <input name="password" type="password" autocomplete="current-password" required></label>
+  <button class="btn" type="submit">Đăng nhập</button>
+</form>
+{% endblock %}

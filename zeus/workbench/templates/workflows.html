@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, risk %}
+{% block body %}
+<form method="get" class="filters">
+  <select name="status" aria-label="Lọc trạng thái"><option value="">Tất cả trạng thái</option>
+  {% for s in statuses %}<option value="{{ s }}" {{ 'selected' if s == current else '' }}>{{ s|vi }}</option>{% endfor %}</select>
+  <button class="btn ghost" type="submit">Lọc</button>
+</form>
+<div class="tablewrap"><table>
+<thead><tr><th>Mục tiêu</th><th>Nhóm</th><th>Rủi ro</th><th>Trạng thái</th><th>Tạo lúc</th></tr></thead>
+<tbody>
+{% for t in tasks %}<tr><td><a href="{{ prefix }}/workflows/{{ t.task_id }}">{{ t.goal }}</a></td><td>{{ t.family|val }}</td><td>{{ risk(t.risk) }}</td><td>{{ badge(t.status) }}</td><td>{{ t.created_at|dt }}</td></tr>
+{% else %}<tr><td colspan="5" class="muted">Chưa có task.</td></tr>{% endfor %}
+</tbody></table></div>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, risk %}
+{% block body %}
+<div class="grid">
+  <div class="card stat"><div class="k">Bản ghi bằng chứng</div><div class="v">{{ n_ev }}</div></div>
+  <div class="card stat"><div class="k">Đã xác minh</div><div class="v">{{ n_verified }}</div></div>
+  <div class="card stat"><div class="k">Thành công xác minh</div><div class="v">{{ n_success }}</div></div>
+</div>
+<h2>Champion / Challenger</h2>
+<p class="muted">Champion = model có cost per verified success thấp nhất trong nhóm việc, cần ít nhất {{ min_n }} lượt. Router chỉ học từ outcome đã xác minh.</p>
+<div class="tablewrap"><table><thead><tr><th>Nhóm việc</th><th>Model</th><th>Vai trò</th><th>Lượt</th><th>Tỉ lệ đạt</th><th>Cost / verified success</th></tr></thead>
+<tbody>{% for r in rows %}<tr><td>{{ r.family }}</td><td>{{ r.stat.provider|val }} / {{ r.stat.model }}</td><td><span class="badge role-{{ 'champ' if r.role == 'champion' else 'other' }}">{{ r.role }}</span></td>
+<td>{{ r.stat.n }}</td><td>{{ '%.0f%%' % (r.stat.success_rate * 100) }}</td><td>{{ r.stat.cost_per_verified_success|usd }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">Chưa có số liệu học.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}
