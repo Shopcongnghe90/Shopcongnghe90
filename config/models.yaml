@@ -1,0 +1,120 @@
+# Bảng model của Model Broker (provider-neutral). Giá USD / 1M token. Đổi giá/ID ở đây, không sửa code.
+# model id = "CAN_DIEN" nghĩa là CHƯA kiểm chứng: provider bị tắt cho tới khi có key + test live (ZEUS_RUN_LIVE=1).
+version: "2026-10"
+pricing_ref: "models.yaml@2026-10"
+
+providers:
+  anthropic:
+    kind: anthropic
+    enabled: true
+    key_env: ANTHROPIC_API_KEY
+  openai:
+    kind: openai
+    enabled: false              # bật khi có key + live test
+    key_env: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1
+  gemini:
+    kind: gemini
+    enabled: false              # bật khi có key + live test
+    key_env: GEMINI_API_KEY
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+  local:
+    kind: local
+    enabled: true
+    base_url_env: ZEUS_LOCAL_LLM_URL     # vd http://10.90.30.20:8080/v1 (llama.cpp server)
+    model_env: ZEUS_LOCAL_LLM_MODEL
+
+# quality: 0..1 theo năng lực (prior bootstrap; router học dần từ verified outcome).
+models:
+  - id: claude-opus-5-5
+    provider: anthropic
+    roles: [FORGE]
+    verified_model_id: true
+    context_window: 1000000
+    max_output_tokens: 128000
+    price_in_per_mtok: 4.0
+    price_out_per_mtok: 20.0
+    latency_ms: 6000
+    supports: {tools: true, vision: true, json: true}
+    quality: {coding: 0.97, planning: 0.92, reasoning: 0.95, vision: 0.85, realtime: 0.2, classify: 0.9}
+  - id: claude-sonnet-5-5
+    provider: anthropic
+    roles: [FORGE]
+    verified_model_id: true
+    context_window: 1000000
+    max_output_tokens: 128000
+    price_in_per_mtok: 2.0
+    price_out_per_mtok: 10.0
+    latency_ms: 3500
+    supports: {tools: true, vision: true, json: true}
+    quality: {coding: 0.92, planning: 0.85, reasoning: 0.85, vision: 0.8, realtime: 0.2, classify: 0.88}
+  - id: CAN_DIEN
+    provider: openai
+    roles: [COMMAND]
+    verified_model_id: false
+    context_window: 128000
+    max_output_tokens: 16000
+    price_in_per_mtok: 0.0
+    price_out_per_mtok: 0.0
+    latency_ms: 4000
+    supports: {tools: true, vision: true, json: true}
+    quality: {coding: 0.85, planning: 0.95, reasoning: 0.95, vision: 0.8, realtime: 0.3, classify: 0.85}
+  - id: CAN_DIEN
+    provider: gemini
+    roles: [RADAR]
+    verified_model_id: false
+    context_window: 1000000
+    max_output_tokens: 8000
+    price_in_per_mtok: 0.0
+    price_out_per_mtok: 0.0
+    latency_ms: 3000
+    supports: {tools: true, vision: true, json: true}
+    quality: {coding: 0.8, planning: 0.8, reasoning: 0.85, vision: 0.95, realtime: 0.95, classify: 0.8}
+  - id: local-default            # thay bằng ZEUS_LOCAL_LLM_MODEL khi chạy thật
+    provider: local
+    roles: [NERVOUS_SYSTEM]
+    verified_model_id: true
+    local: true
+    context_window: 16000
+    max_output_tokens: 4096
+    price_in_per_mtok: 0.0
+    price_out_per_mtok: 0.0
+    latency_ms: 2500
+    supports: {tools: false, vision: false, json: true}
+    quality: {coding: 0.5, planning: 0.55, reasoning: 0.5, vision: 0.0, realtime: 0.0, classify: 0.7}
+
+# Prior theo family: vai trò ưu tiên + trọng số đặc trưng (coding/planning/...); dùng khi request không chỉ định role.
+family_priors:
+  default: {role: COMMAND, kind: planning}
+  erp_bug: {role: FORGE, kind: coding}
+  erp_feature: {role: FORGE, kind: coding}
+  website_edit: {role: FORGE, kind: coding}
+  website_build: {role: FORGE, kind: coding}
+  frontend: {role: FORGE, kind: coding}
+  backend: {role: FORGE, kind: coding}
+  database: {role: FORGE, kind: coding}
+  deployment: {role: FORGE, kind: coding}
+  security: {role: COMMAND, kind: reasoning}
+  visual_qa: {role: RADAR, kind: vision}
+  customer_support: {role: NERVOUS_SYSTEM, kind: classify}
+  zalo_issue: {role: NERVOUS_SYSTEM, kind: classify}
+  facebook_issue: {role: NERVOUS_SYSTEM, kind: classify}
+  shopee_issue: {role: NERVOUS_SYSTEM, kind: classify}
+  worker_scheduling: {role: NERVOUS_SYSTEM, kind: classify}
+  model_routing: {role: COMMAND, kind: planning}
+  tool_selection: {role: COMMAND, kind: planning}
+  domain_provisioning: {role: COMMAND, kind: planning}
+  general: {role: COMMAND, kind: planning}
+
+# Trọng số chấm điểm router (tổng ~1). Đổi = thay đổi policy_version.
+weights:
+  role_prior: 0.14
+  capability: 0.22
+  risk_quality: 0.08
+  freshness: 0.06
+  context_fit: 0.05
+  latency: 0.07
+  cost: 0.13
+  availability: 0.05
+  learned: 0.20
+policy_version: "bootstrap-1"

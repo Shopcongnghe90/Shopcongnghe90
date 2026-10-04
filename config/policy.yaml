@@ -1,0 +1,28 @@
+# Policy Engine + Tool Gateway + budget + approval. Thuần deterministic; mọi quyết định mang rule_ids.
+version: "2026-10-1"
+
+risk:
+  approval_min: R2              # R2/R3 cần người duyệt
+  external_min: R2              # action external tối thiểu R2
+
+approval:
+  timeout_s: 3600               # quá hạn => EXPIRED
+  required_approvers: {R2: 1, R3: 1}
+
+# Tên action bị cấm tuyệt đối (glob). LLM không bao giờ có shell tự do: chỉ typed action trong registry.
+deny_actions:
+  - "shell.*"
+  - "system.raw_*"
+  - "secrets.export"
+
+budget:
+  per_task_usd: 2.0
+  per_day_usd: 25.0
+
+tenants:
+  default:
+    allow_cloud_llm: false      # ADR-017: tenant phải opt-in
+    allow_actions: ["*.read", "*.get", "*.list", "*.search", "*.check"]
+  zeusvn:
+    allow_cloud_llm: true       # nội bộ; PII vẫn bị che trước khi gửi cloud
+    allow_actions: ["*"]
