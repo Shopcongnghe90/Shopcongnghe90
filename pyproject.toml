@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zeusvn-brain"
+version = "0.1.0"
+description = "ZeusVN Brain — ZEUS Intelligence OS (control plane, project brain, thin workers, workbench)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+  "pydantic>=2.6,<3",
+  "httpx>=0.27",
+  "anthropic>=1.0",
+  "temporalio>=1.34",
+  "psycopg[binary]>=3.1",
+  "jinja2>=3.1",
+  "pyyaml>=6.0",
+  "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=1.0"]
+otel = ["opentelemetry-sdk>=1.24"]
+
+[tool.setuptools.packages.find]
+include = ["zeus*", "zeus_worker*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+addopts = "-ra --strict-markers"
+markers = [
+  "pg: needs a real PostgreSQL 16 cluster (fixture pg_dsn)",
+  "temporal: needs the local Temporal dev server (fixture temporal_env)",
+  "slow: slow test",
+  "live: calls real external services/providers; skipped unless ZEUS_RUN_LIVE=1",
+  "cloud_exit_workflow: Cloud Exit WORKFLOW evidence",
+  "cloud_exit_model_fallback: Cloud Exit MODEL_FALLBACK evidence",
+  "cloud_exit_project_brain: Cloud Exit PROJECT_BRAIN evidence",
+  "cloud_exit_worker_control: Cloud Exit WORKER_CONTROL evidence",
+  "cloud_exit_evidence: Cloud Exit EVIDENCE evidence",
+]

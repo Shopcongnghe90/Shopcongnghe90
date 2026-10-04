@@ -1,0 +1,8 @@
+# Mẫu (ERE, không phân biệt hoa thường) bị CẤM trong mã runtime zeus/ và zeus_worker/.
+# Runtime không được phụ thuộc Claude Cloud / claude.ai / Claude Code Routines / Remote Control.
+claude\.ai
+routines?\b
+remote-control
+setup-token
+/tmp/claude
+CLAUDE_CODE_[A-Z_]*
