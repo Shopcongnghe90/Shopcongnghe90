@@ -12,3 +12,6 @@ else
   exit 2
 fi
 export PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+# Công cụ cài trong venv (vd shellcheck từ shellcheck-py) phải thấy được với test => thêm bin của venv vào PATH.
+PY_BIN_DIR="$(dirname "$PY")"
+case ":$PATH:" in *":$PY_BIN_DIR:"*) ;; *) export PATH="$PY_BIN_DIR:$PATH" ;; esac

@@ -22,11 +22,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8", "pytest-asyncio>=1.0"]
+test = ["pytest>=8", "pytest-asyncio>=1.0", "shellcheck-py>=0.9"]
 otel = ["opentelemetry-sdk>=1.24"]
 
 [tool.setuptools.packages.find]
 include = ["zeus*", "zeus_worker*"]
+
+[tool.setuptools.package-data]
+# Workbench cần template/static khi cài bằng wheel (không editable); unit systemd/cấu hình mẫu đi kèm gói.
+"zeus.workbench" = ["templates/*.html", "static/*"]
+"zeus.app" = ["deploy/*"]
+"zeus.localai" = ["deploy/*"]
+"zeus_worker" = ["deploy/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,26 @@
+# ZeusVN Brain API trên zeus-core: Control API /api/v1, Worker API /worker/v1, Workbench /wb, webhook /hooks, /internal.
+# Cài: sudo install -m 0644 zeus-api.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now zeus-api
+# Bind IP nội bộ br-core (KHÔNG 0.0.0.0). /hooks đi qua zeus-edge (reverse proxy TLS), không mở trực tiếp ra Internet.
+[Unit]
+Description=ZeusVN Brain API (Control/Worker API, Workbench, hooks)
+After=network-online.target postgresql.service zeus-temporal.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zeus
+Group=zeus
+WorkingDirectory=/opt/zeus/app
+EnvironmentFile=/etc/zeus/zeus.env
+ExecStart=/opt/zeus/venv/bin/python -m uvicorn --factory zeus.app.main:create_server_app --host 10.90.30.10 --port 8080 --proxy-headers --forwarded-allow-ips 10.90.50.10
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/zeus
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

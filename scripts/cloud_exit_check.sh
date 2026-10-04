@@ -8,7 +8,7 @@
 # Exit != 0 nếu có FAIL.
 set -uo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_python.sh"
-cd "$REPO_ROOT"
+cd "$REPO_ROOT" || exit 2
 
 export CLAUDE_CLOUD_AVAILABLE=false
 for v in $(env | grep -oE '^CLAUDE_CODE_[A-Za-z0-9_]*' || true); do unset "$v"; done

@@ -28,6 +28,8 @@ class WorkerConfig:
     file_roots: list[Path] = field(default_factory=list)
     repo_roots: list[Path] = field(default_factory=list)
     shell_allowlist: dict[str, list[str]] = field(default_factory=dict)  # tên -> argv cố định, không nhận tham số
+    test_repo: Path | None = None  # test.run: repo chạy pytest (phải nằm trong repo_roots); None => không quảng bá test.run
+    test_target: str = ""  # test.run: đường dẫn tương đối trong repo (vd "tests")
     heartbeat_interval_s: float = 15.0
     poll_wait_s: int = 20
     max_output_bytes: int = 64 * 1024
@@ -60,6 +62,8 @@ class WorkerConfig:
             file_roots=[Path(p) for p in ex.get("file_roots", [])],
             repo_roots=[Path(p) for p in ex.get("repo_roots", [])],
             shell_allowlist={k: list(v) for k, v in ex.get("shell_allowlist", {}).items()},
+            test_repo=Path(ex["test_repo"]) if ex.get("test_repo") else None,
+            test_target=str(ex.get("test_target", "")),
             heartbeat_interval_s=float(wk.get("heartbeat_interval_s", 15)),
             poll_wait_s=int(wk.get("poll_wait_s", 20)),
         )

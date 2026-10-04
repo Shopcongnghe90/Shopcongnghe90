@@ -38,5 +38,5 @@ def test_healthz():
         r = client.get("/healthz")
     assert r.status_code == 200
     body = r.json()
-    assert body["status"] == "ok" and body["contracts_version"] == "1.0.0"
+    assert body["status"] == "ok" and body["contracts_version"] == "1.1.0"
     assert body["claude_cloud_available"] is False

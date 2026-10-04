@@ -124,3 +124,33 @@ Trạng thái: `ACCEPTED` · `PROPOSED` · `SUPERSEDED` · `GATED` (chờ ngư�
 - **Lý do:** Luật BVDLCN 91/2025/QH15 hiệu lực 01/01/2026.
 - **Bằng chứng:** `migrations/000_core.sql`; fake broker test PII → local — PASS.
 - **Trạng thái:** ACCEPTED
+
+## ADR-018 — Mối nối tích hợp Phase 1 (A↔C↔B↔D) và kiểu hoàn thành activity dispatch
+- **Ngày:** 2026-10-04
+- **Bổ sung:** ADR-011 (không thay thế).
+- **Quyết định:**
+  1. Dispatch tới worker trong hệ thống tích hợp đi qua activity `zeus.control.run_node` của TaskWorkflow (A), kiểu trả về là `AssignmentResult` (không phải `ActionResult`). Worker API (C) hoàn thành activity bằng `ControlPlaneCompleter.complete_assignment(task_token, AssignmentResult)` — giữ nguyên evidence/log/artifact của worker và gắn `metrics.schedule_decision_id` từ bảng `assignments`. Đường huỷ/hết lease của C (chỉ có `ActionResult`) được bọc thành `AssignmentResult`. `DispatchActivities` (queue `zeus-dispatch`) của C giữ làm thành phần độc lập, không đăng ký trong worker tích hợp.
+  2. `ScheduleDecision` của mọi lần dispatch được lưu (`PersistingScheduler`); outcome đã kiểm chứng ghi ngược vào quyết định (`LearningOutcomeRecorder`) => nhãn học P(success | task, worker).
+  3. Activity dispatch của A truyền `context` (family/urgency/risk/capability) vào `PgAssignmentQueue.enqueue` để giao lại đúng capability khi worker mất tín hiệu.
+  4. Artifact upload của worker đi vào `ArtifactStore` (B) khi được cấu hình, để `EvidenceRecord` tham chiếu `artifact://<tenant>/<sha>` hợp lệ (trước đó PgEvidenceStore ném ArtifactMissing).
+  5. Từ vựng action của playbook ↔ executor của thin worker: thêm executor `test.run` (bộ test cố định do người vận hành cấu hình trên worker, bỏ qua tham số tự do). Control chỉ đăng ký action worker mà planner điền được tham số (`test.run`, `noop.echo`), capability `action:<tên>` do worker tự quảng bá.
+- **Lý do:** Các workstream test bằng fakes nên không lộ ra 4 lỗ hở này; tích hợp thật bị gãy ở cả 4 điểm (kiểu activity, mất evidence, thiếu artifact, không có executor cho action của playbook).
+- **Bằng chứng:** `tests/shared/test_e2e_system.py` (PG16 + Temporal thật + zeus_worker trong tiến trình) — 3 PASS; smoke tiến trình thật (uvicorn `create_server_app` + `zeus.app.worker_main` + `python -m zeus_worker` + Temporal dev server + PG16): task SUCCEEDED, evidence VERIFIED_SUCCESS từ worker.
+- **Trạng thái:** ACCEPTED
+
+## ADR-019 — Contracts v1.1.0 và xử lý CONTRACT_CHANGE_REQUEST Phase 1
+- **Ngày:** 2026-10-04
+- **Quyết định:**
+  - ÁP DỤNG: `tests/shared/test_migrations.py` so với `discover_migrations` (đã làm ở 3d55cf4); `EvidenceStore.get(record_id, tenant_id=None)` và `OutcomeRecorder.stats(task_family=None, tenant_id=None)` (thay đổi cộng thêm, tương thích ngược) => `CONTRACTS_VERSION = 1.1.0`; Control API truyền tenant khi đọc evidence/stats; `Settings` thêm `brain_config`, `workers_config`, `channels_config`, `artifact_dir`, `api_token_env` (CCR C-2).
+  - GHI NHẬN, KHÔNG ĐỔI CONTRACT: `WorkbenchDataSource` thêm get_graph/last_heartbeat/list_audit (CCR D-2) — cài trong `PgWorkbenchDataSource` và tiêm qua `WorkbenchContext.graph_provider/audit_provider/registry`, không thêm vào Protocol (tránh phá fakes/isinstance). `ModelRequest` thêm risk/complexity/freshness (CCR A-3) và `RouterStat.prompt_version` (B) — hoãn sang Phase 2 khi router học dùng tới. `AssignmentQueue.enqueue` có `context` (C-3) — giữ tuỳ chọn ngoài Protocol, A kiểm tra chữ ký.
+  - Từ cấm `routine(s)` trong `zeus/` (B) giữ nguyên trong `scripts/cloud_exit_forbidden.txt`.
+- **Lý do:** Chỉ đổi contract khi cần cho an toàn (cô lập tenant) hoặc tích hợp; phần còn lại không chặn Phase 1.
+- **Bằng chứng:** toàn suite PASS; `test_e2e_system.py` kiểm tenant khác đọc evidence => 404.
+- **Trạng thái:** ACCEPTED
+
+## ADR-020 — Hình dạng triển khai Phase 1 trên zeus-core và xác thực API
+- **Ngày:** 2026-10-04
+- **Quyết định:** Hai tiến trình Python trên `zeus-core`: (1) `uvicorn --factory zeus.app.main:create_server_app` phục vụ `/api/v1` (A), `/worker/v1` (C), `/internal/evidence` + `/internal/system` (B/integrator), `/wb` (D), `/hooks/*` (D), `/healthz`, `/readyz`; (2) `python -m zeus.app.worker_main` chạy TaskWorkflow trên queue `zeus-control` + vòng bảo trì dispatcher (sweep). `/api/v1` và `/internal` yêu cầu `Authorization: Bearer` từ `ZEUS_API_TOKEN`; env `staging/prod` thiếu token => 503 (fail closed). Temporal giai đoạn 1 = dev server CLI với persistence SQLite trên đĩa; mục tiêu production = Temporal Server + Postgres persistence (chưa kiểm chứng). Unit systemd mẫu ở `zeus/app/deploy/`.
+- **Lý do:** Ít thành phần nhất chạy được không cần Claude Cloud; Control API trước đây không có xác thực (rủi ro A).
+- **Bằng chứng:** `tests/shared/test_app_wiring.py` (401/503/404 đúng chỗ, CLI phát hành token); smoke tiến trình thật ở ADR-018.
+- **Trạng thái:** ACCEPTED (cài trên host thật: GATED theo ADR-012, G1/G2)

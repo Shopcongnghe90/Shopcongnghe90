@@ -1,0 +1,22 @@
+# Temporal cho GIAI ĐOẠN 1 một máy: dev server CLI với persistence SQLite trên đĩa (không mất workflow khi restart).
+# Mục tiêu production (kiến trúc mục 3.10): Temporal Server với persistence PostgreSQL — chưa kiểm chứng trên host thật.
+# UI chỉ bind 127.0.0.1 (xem qua SSH tunnel).
+[Unit]
+Description=Temporal dev server (ZeusVN Brain, giai đoạn 1)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zeus
+Group=zeus
+ExecStart=/opt/zeus/bin/temporal server start-dev --ip 127.0.0.1 --port 7233 --ui-ip 127.0.0.1 --ui-port 8233 --db-filename /var/lib/zeus/temporal/temporal.db --namespace default
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/zeus/temporal
+
+[Install]
+WantedBy=multi-user.target

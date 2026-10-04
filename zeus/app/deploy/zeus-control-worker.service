@@ -1,0 +1,25 @@
+# Temporal worker phía control (TaskWorkflow + activities + vòng bảo trì dispatcher) trên zeus-core.
+# Cài: sudo install -m 0644 zeus-control-worker.service /etc/systemd/system/ && sudo systemctl enable --now zeus-control-worker
+[Unit]
+Description=ZeusVN Brain control worker (Temporal task queue zeus-control)
+After=network-online.target postgresql.service zeus-temporal.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zeus
+Group=zeus
+WorkingDirectory=/opt/zeus/app
+EnvironmentFile=/etc/zeus/zeus.env
+ExecStart=/opt/zeus/venv/bin/python -m zeus.app.worker_main
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/zeus
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

@@ -11,7 +11,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi import FastAPI
@@ -47,6 +47,9 @@ class WorkerServices:
     completer: ActivityCompleter | None
     artifact_dir: Path
     dsn: str
+    # Tuỳ chọn (integrator, ADR-018): ArtifactStore content-addressed của B. Khi có, mọi upload của worker vào đó để
+    # EvidenceRecord tham chiếu ``artifact://<tenant>/<sha>`` được PgEvidenceStore chấp nhận (không ArtifactMissing).
+    artifact_store: Any = None
 
 
 def install(app: FastAPI, services: WorkerServices) -> None:
@@ -117,9 +120,17 @@ async def poll(req: PollRequest, grant: Grant, request: Request) -> PollResponse
         await asyncio.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
 
 
-async def _finish_activity(s: WorkerServices, assignment_id: str, token: bytes | None, result) -> None:
+async def _finish_activity(
+    s: WorkerServices, assignment_id: str, token: bytes | None, result, full: AssignmentResult | None = None
+) -> None:
+    """Hoàn thành activity. Completer có ``complete_assignment`` (activity run_node của TaskWorkflow, ADR-018) nhận
+    nguyên AssignmentResult (kèm evidence/log/artifact); completer cũ chỉ nhận ActionResult."""
     if token and s.completer:
-        await s.completer.complete(token, result)
+        full_fn = getattr(s.completer, "complete_assignment", None)
+        if full is not None and full_fn is not None:
+            await full_fn(token, full)
+        else:
+            await s.completer.complete(token, result)
         await s.queue.mark_activity_completed(assignment_id)
 
 
@@ -138,7 +149,7 @@ async def post_result(assignment_id: str, res: AssignmentResult, grant: Grant, r
         return Ack(detail="đã nhận trước đó")
     result = res.result.model_copy(update={"executed_by": res.worker_id})
     try:
-        await _finish_activity(s, assignment_id, token, result)
+        await _finish_activity(s, assignment_id, token, result, res.model_copy(update={"result": result}))
     except Exception as exc:  # activity chưa hoàn thành được: worker gửi lại sẽ thử tiếp (token vẫn được trả)
         log.exception("không hoàn thành được activity cho %s", assignment_id)
         raise HTTPException(502, f"không hoàn thành activity: {exc}") from exc
@@ -180,11 +191,15 @@ async def upload_artifact(
         sha = hashlib.sha256(body).hexdigest()
         tenant = row["tenant_id"]
         ref = f"artifact://{tenant}/{sha}"
-        path = s.artifact_dir / tenant / sha
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if not path.exists():
-            path.write_bytes(body)
         safe_name = Path(name).name if name else None
+        if s.artifact_store is not None:
+            await s.artifact_store.put(tenant, body, mime, safe_name)
+            path = s.artifact_store._path(tenant, sha)
+        else:
+            path = s.artifact_dir / tenant / sha
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                path.write_bytes(body)
         await conn.execute(
             """INSERT INTO worker_artifacts (ref, tenant_id, sha256, size_bytes, mime, name, kind, worker_id, assignment_id, path)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (ref) DO NOTHING""",

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import inspect
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import timedelta
@@ -105,6 +106,13 @@ def root_span_id(trace_id: str) -> str:
 
 def assignment_id(task_id: str, node_id: str, attempt: int) -> str:
     return "asg_" + hashlib.sha256(f"{task_id}/{node_id}".encode()).hexdigest()[:20] + f"_a{attempt}"
+
+
+def _accepts_context(queue: Any) -> bool:
+    try:
+        return "context" in inspect.signature(queue.enqueue).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _local_result(node_id: str, task: Task, res: ActionResult) -> AssignmentResult:
@@ -293,7 +301,11 @@ class ControlActivities:
             schedule_decision_id=decision.decision_id,
             attempt=info.attempt,
         )
-        await d.queue.enqueue(asg, decision.worker_id, task_token=info.task_token)
+        ctx = {"family": task.family.value, "urgency": task.urgency, "risk": node.risk.value, "required_capabilities": caps}
+        if _accepts_context(d.queue):  # PgAssignmentQueue (C): lưu ngữ cảnh để giao lại đúng capability khi worker mất tín hiệu
+            await d.queue.enqueue(asg, decision.worker_id, task_token=info.task_token, context=ctx)  # type: ignore[call-arg]
+        else:
+            await d.queue.enqueue(asg, decision.worker_id, task_token=info.task_token)
         await d.store.save_node(task.task_id, node.model_copy(update={"status": TaskStatus.SCHEDULED}), attempts=info.attempt)
 
     async def _persist_node(self, task: Task, node: TaskNode, res: AssignmentResult) -> None:
@@ -379,7 +391,7 @@ class ControlActivities:
                     verdict = verdict.model_copy(update={"reasons": [*verdict.reasons, *req.notes]})
             final = rec.model_copy(update={"final_outcome": verdict.outcome, "verified_by": verdict.judge})
             final = EvidenceRecord.model_validate(final.model_dump(mode="python"))  # chạy lại validator "claims are not evidence"
-            if await d.evidence.get(final.record_id) is None:
+            if await d.evidence.get(final.record_id, tenant_id=task.tenant_id) is None:
                 await d.evidence.put(final)
             await d.outcomes.record(final)
             status = (

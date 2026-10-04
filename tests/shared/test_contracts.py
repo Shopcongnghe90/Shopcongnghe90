@@ -42,7 +42,7 @@ TRACE = "a" * 32
 
 
 def test_contracts_version_frozen():
-    assert models.CONTRACTS_VERSION == "1.0.0"
+    assert models.CONTRACTS_VERSION == "1.1.0"
 
 
 def test_task_families_cover_eval_set():

@@ -18,7 +18,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-CONTRACTS_VERSION = "1.0.0"
+CONTRACTS_VERSION = "1.1.0"  # 1.1.0: EvidenceStore.get/OutcomeRecorder.stats nhận tenant_id tuỳ chọn (ADR-019)
 DEFAULT_TENANT = "zeusvn"
 
 TenantId = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{1,62}$")]

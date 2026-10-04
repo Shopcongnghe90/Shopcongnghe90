@@ -1,6 +1,8 @@
 """Executor có kiểu (typed). Mỗi executor nhận args đã kiểm tra; KHÔNG có executor shell tự do.
 
-- noop.echo, http.fetch (+ http.check), file.checksum, repo.tests.run, shell.allowlisted.
+- noop.echo, http.fetch (+ http.check), file.checksum, repo.tests.run, test.run, shell.allowlisted.
+- test.run (từ vựng playbook của control): chạy bộ test người vận hành cấu hình sẵn trên worker
+  (``executors.test_repo``/``test_target``); bỏ qua mọi tham số tự do từ control (vd ``goal``).
 - shell.allowlisted chỉ chạy lệnh có TÊN trong cấu hình (argv cố định, không nhận tham số từ LLM).
 """
 
@@ -144,20 +146,39 @@ def parse_pytest_summary(text: str) -> dict[str, int]:
     return counts
 
 
+async def _run_pytest(ctx: ExecContext, repo: Path, target: str) -> ExecOutput:
+    if target.startswith("-") or ".." in Path(target).parts or Path(target).is_absolute():
+        raise ExecError("target không hợp lệ")
+    argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *([target] if target else [])]
+    code, out = await run_process(argv, cwd=repo, limit=ctx.cfg.max_output_bytes)
+    c = parse_pytest_summary(out)
+    run = TestRun(name=f"pytest:{repo.name}", command=" ".join(argv[2:]), passed=c["passed"], failed=c["failed"] + c["error"], skipped=c["skipped"], exit_code=code)
+    ev = EvidenceItem(kind=EvidenceKind.TEST_RESULT, summary=f"{run.passed} passed, {run.failed} failed, {run.skipped} skipped (exit {code})", passed=run.ok)
+    return ExecOutput(output={"test_run": run.model_dump(mode="json")}, ok=run.ok, error=None if run.ok else f"tests exit {code}", log=out, evidence=[ev])
+
+
 class RepoTestsRun:
     name = "repo.tests.run"
 
     async def run(self, ctx: ExecContext) -> ExecOutput:
         repo = _under(Path(str(ctx.action.args.get("repo", ""))), ctx.cfg.repo_roots)
-        target = str(ctx.action.args.get("target", ""))
-        if target.startswith("-") or ".." in Path(target).parts or Path(target).is_absolute():
-            raise ExecError("target không hợp lệ")
-        argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *([target] if target else [])]
-        code, out = await run_process(argv, cwd=repo, limit=ctx.cfg.max_output_bytes)
-        c = parse_pytest_summary(out)
-        run = TestRun(name=f"pytest:{repo.name}", command=" ".join(argv[2:]), passed=c["passed"], failed=c["failed"] + c["error"], skipped=c["skipped"], exit_code=code)
-        ev = EvidenceItem(kind=EvidenceKind.TEST_RESULT, summary=f"{run.passed} passed, {run.failed} failed, {run.skipped} skipped (exit {code})", passed=run.ok)
-        return ExecOutput(output={"test_run": run.model_dump(mode="json")}, ok=run.ok, error=None if run.ok else f"tests exit {code}", log=out, evidence=[ev])
+        return await _run_pytest(ctx, repo, str(ctx.action.args.get("target", "")))
+
+
+class ConfiguredTestRun:
+    """``test.run``: bộ test cố định do người vận hành cấu hình (repo nằm trong repo_roots). Args từ control bị bỏ qua."""
+
+    name = "test.run"
+
+    @staticmethod
+    def available(cfg: WorkerConfig) -> bool:
+        return cfg.test_repo is not None
+
+    async def run(self, ctx: ExecContext) -> ExecOutput:
+        if ctx.cfg.test_repo is None:
+            raise ExecError("worker chưa cấu hình executors.test_repo")
+        repo = _under(ctx.cfg.test_repo, ctx.cfg.repo_roots)
+        return await _run_pytest(ctx, repo, ctx.cfg.test_target)
 
 
 class ShellAllowlisted:
@@ -190,4 +211,4 @@ class ExecutorRegistry:
 
 
 def default_executors() -> list[Executor]:
-    return [NoopEcho(), HttpFetch(), FileChecksum(), RepoTestsRun(), ShellAllowlisted()]
+    return [NoopEcho(), HttpFetch(), FileChecksum(), RepoTestsRun(), ConfiguredTestRun(), ShellAllowlisted()]

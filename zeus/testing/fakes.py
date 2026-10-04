@@ -403,8 +403,9 @@ class InMemoryEvidenceStore:
         self.records[record.record_id] = record
         return record.record_id
 
-    async def get(self, record_id: str) -> EvidenceRecord | None:
-        return self.records.get(record_id)
+    async def get(self, record_id: str, tenant_id: str | None = None) -> EvidenceRecord | None:
+        rec = self.records.get(record_id)
+        return rec if rec is not None and (tenant_id is None or rec.tenant_id == tenant_id) else None
 
     async def list_for_task(self, tenant_id: str, task_id: str) -> list[EvidenceRecord]:
         return [r for r in self.records.values() if r.tenant_id == tenant_id and r.task_id == task_id]
@@ -507,7 +508,7 @@ class FakeBrainRetriever:
 class InMemoryOutcomeRecorder:
     def __init__(self) -> None:
         self.dataset: list[DatasetRecord] = []
-        self._stats: dict[tuple[TaskFamily, ProviderKind, str], RouterStat] = {}
+        self._stats: dict[tuple[TaskFamily, ProviderKind, str, str], RouterStat] = {}
 
     async def record(self, evidence: EvidenceRecord) -> DatasetRecord:
         verified = evidence.final_outcome is not Outcome.UNVERIFIED
@@ -522,7 +523,7 @@ class InMemoryOutcomeRecorder:
         )
         self.dataset.append(rec)
         if evidence.model_provider and evidence.model_name:
-            key = (evidence.task_family, evidence.model_provider, evidence.model_name)
+            key = (evidence.task_family, evidence.model_provider, evidence.model_name, evidence.tenant_id)
             st = self._stats.get(key) or RouterStat(task_family=key[0], provider=key[1], model=key[2])
             upd: dict[str, Any] = {
                 "n": st.n + 1,
@@ -538,8 +539,11 @@ class InMemoryOutcomeRecorder:
             self._stats[key] = st.model_copy(update=upd)
         return rec
 
-    async def stats(self, task_family: TaskFamily | None = None) -> list[RouterStat]:
-        return [s for k, s in self._stats.items() if task_family is None or k[0] is task_family]
+    async def stats(self, task_family: TaskFamily | None = None, tenant_id: str | None = None) -> list[RouterStat]:
+        return [
+            s for k, s in self._stats.items()
+            if (task_family is None or k[0] is task_family) and (tenant_id is None or k[3] == tenant_id)
+        ]
 
 
 # ============================================================== C

@@ -51,6 +51,12 @@ class Settings(BaseModel):
     worker_token_env: str = "ZEUS_WORKER_TOKEN"
     models_config: Path = Path("config/models.yaml")
     policy_config: Path = Path("config/policy.yaml")
+    brain_config: Path = Path("config/brain.yaml")
+    workers_config: Path = Path("config/workers.yaml")
+    channels_config: Path = Path("config/channels.yaml")
+    artifact_dir: Path | None = None  # None => <data_dir>/artifacts
+    # Tên biến môi trường chứa token Bearer cho /api/v1 và /internal (không phải giá trị). Bắt buộc khi env=staging/prod.
+    api_token_env: str = "ZEUS_API_TOKEN"
     migrations_dir: Path = Path("migrations")
     data_dir: Path = Path("var")
     log_level: str = "INFO"
@@ -78,6 +84,11 @@ class Settings(BaseModel):
             "ZEUS_WORKER_TOKEN_ENV": "worker_token_env",
             "ZEUS_MODELS_CONFIG": "models_config",
             "ZEUS_POLICY_CONFIG": "policy_config",
+            "ZEUS_BRAIN_CONFIG": "brain_config",
+            "ZEUS_WORKERS_CONFIG": "workers_config",
+            "ZEUS_CHANNELS_CONFIG": "channels_config",
+            "ZEUS_ARTIFACT_DIR": "artifact_dir",
+            "ZEUS_API_TOKEN_ENV": "api_token_env",
             "ZEUS_MIGRATIONS_DIR": "migrations_dir",
             "ZEUS_DATA_DIR": "data_dir",
             "ZEUS_LOG_LEVEL": "log_level",
@@ -107,6 +118,13 @@ class Settings(BaseModel):
 
     def cloud_providers_enabled(self) -> bool:
         return self.allow_cloud_llm
+
+    def artifacts_path(self) -> Path:
+        return self.artifact_dir or (self.data_dir / "artifacts")
+
+    def api_token(self, env: Mapping[str, str] | None = None) -> SecretStr | None:
+        value = (os.environ if env is None else env).get(self.api_token_env)
+        return SecretStr(value) if value else None
 
 
 def get_settings() -> Settings:

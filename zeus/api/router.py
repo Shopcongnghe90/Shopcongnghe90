@@ -65,13 +65,15 @@ class NullWorkflowControl:
 
 
 class TemporalWorkflowControl:
-    def __init__(self, client: Any) -> None:
+    def __init__(self, client: Any, task_queue: str | None = None) -> None:
         self.client = client
+        self.task_queue = task_queue
 
     async def start(self, task: Task, event: Event | None) -> str:
         from zeus.orchestration.client import start_task_workflow
 
-        return (await start_task_workflow(self.client, task, event)).id
+        kw: dict[str, Any] = {"task_queue": self.task_queue} if self.task_queue else {}
+        return (await start_task_workflow(self.client, task, event, **kw)).id
 
     async def signal_approval(self, task_id: str, decision: ApprovalDecision) -> None:
         from zeus.orchestration.client import signal_approval
@@ -213,7 +215,7 @@ async def decide_approval(approval_id: str, body: DecisionBody, request: Request
 @router.get(Paths.EVIDENCE)
 async def get_evidence(record_id: str, request: Request, x_zeus_tenant: str | None = Header(default=None, alias=HEADER_TENANT)) -> EvidenceRecord:
     s = _svc(request)
-    rec = await s.evidence.get(record_id)
+    rec = await s.evidence.get(record_id, tenant_id=_tenant(x_zeus_tenant))
     if rec is None or rec.tenant_id != _tenant(x_zeus_tenant):
         raise HTTPException(404, "không thấy bằng chứng")
     return rec
@@ -229,7 +231,7 @@ async def list_workers(request: Request) -> list[dict[str, Any]]:
 async def router_stats(request: Request, x_zeus_tenant: str | None = Header(default=None, alias=HEADER_TENANT)) -> dict[str, Any]:
     s = _svc(request)
     tenant = _tenant(x_zeus_tenant)
-    stats = await s.outcomes.stats()
+    stats = await s.outcomes.stats(tenant_id=tenant)
     routes = await s.store.list_routes(tenant, 50)
     return {
         "stats": [{**st.model_dump(mode="json"), "success_rate": st.success_rate, "cost_per_verified_success": st.cost_per_verified_success} for st in stats],

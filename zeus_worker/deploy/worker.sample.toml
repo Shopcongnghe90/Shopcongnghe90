@@ -20,6 +20,10 @@ work_dir = "/var/lib/zeus-worker"
 http_allow_domains = ["zeusvn.vn", ".zeusvn.vn"]
 file_roots = ["/var/lib/zeus-worker/work"]
 repo_roots = ["/var/lib/zeus-worker/work"]
+# test.run (bước "Chạy kiểm thử" trong playbook): bộ test cố định của worker, nằm trong repo_roots.
+# Bỏ trống => worker không nhận test.run.
+# test_repo = "/var/lib/zeus-worker/work/repo"
+# test_target = "tests"
 
 # shell.allowlisted: TÊN -> argv cố định. Không nhận tham số từ bên ngoài.
 [executors.shell_allowlist]

@@ -54,6 +54,10 @@ class WorkerAgent:
         for name in self.cfg.extra_capabilities:
             caps.setdefault(name, WorkerCapability(name=name))
         for name in self.executors.names():
+            ex = self.executors.get(name)
+            available = getattr(ex, "available", None)
+            if available is not None and not available(self.cfg):
+                continue  # executor cần cấu hình mà worker chưa có (vd test.run thiếu test_repo) => không quảng bá
             caps.setdefault(f"action:{name}", WorkerCapability(name=f"action:{name}"))
         return WorkerInfo(
             worker_id=self.cfg.worker_id, kind=WorkerKind(self.cfg.kind), tenant_scope=self.cfg.tenant_scope,
