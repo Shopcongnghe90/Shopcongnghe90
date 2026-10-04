@@ -1,0 +1,25 @@
+# may/erp-thu-nghiem.yaml — cấu hình RIÊNG cho máy "erp-thu-nghiem" (loại: erp).
+# Dùng: incus init <ảnh> erp-thu-nghiem --vm -p may-ao-chung -p <hồ sơ> < may/erp-thu-nghiem.yaml
+# (tao-may.sh tao erp-thu-nghiem làm việc này.)
+#
+# Ghim nhân E: i9-13900 = 8 nhân P (CPU logic 0-15, có SMT) + 16 nhân E (CPU logic 16-31).
+# Chạy kiem-tra.sh để xác nhận; nếu danh sách E khác 16-31 thì sửa limits.cpu bên dưới.
+# Với máy ảo, limits.cpu dạng khoảng = ghim 1:1 (số vCPU = số CPU trong khoảng).
+description: "ERP thử nghiệm (Odoo mẫu qua Docker) — mạng br-erp cách ly"
+config:
+  limits.cpu: "28-31"
+  limits.memory: 8GiB
+  # ERP: giữ snapshot 14 ngày (ghi đè hồ sơ)
+  snapshots.expiry: "14d"
+devices:
+  eth0:
+    type: nic
+    network: br-erp
+    name: eth0
+    # Địa chỉ cố định (cấp qua DHCP của Incus) — nằm ngoài dải động .100-.199
+    ipv4.address: 10.90.20.11
+  root:
+    type: disk
+    pool: may-ao
+    path: /
+    size: 60GiB

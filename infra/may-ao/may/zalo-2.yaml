@@ -1,0 +1,23 @@
+# may/zalo-2.yaml — cấu hình RIÊNG cho máy "zalo-2" (loại: windows).
+# Dùng: incus init <ảnh> zalo-2 --vm -p may-ao-chung -p <hồ sơ> < may/zalo-2.yaml
+# (tao-may.sh tao zalo-2 làm việc này.)
+#
+# Ghim nhân E: i9-13900 = 8 nhân P (CPU logic 0-15, có SMT) + 16 nhân E (CPU logic 16-31).
+# Chạy kiem-tra.sh để xác nhận; nếu danh sách E khác 16-31 thì sửa limits.cpu bên dưới.
+# Với máy ảo, limits.cpu dạng khoảng = ghim 1:1 (số vCPU = số CPU trong khoảng).
+description: "Windows 11 — Zalo PC #2 (agent Claude điều khiển từ xa)"
+config:
+  limits.cpu: "18-19"
+  limits.memory: 8GiB
+devices:
+  eth0:
+    type: nic
+    network: br-agent
+    name: eth0
+    # Địa chỉ cố định (cấp qua DHCP của Incus) — nằm ngoài dải động .100-.199
+    ipv4.address: 10.90.10.12
+  root:
+    type: disk
+    pool: may-ao
+    path: /
+    size: 80GiB

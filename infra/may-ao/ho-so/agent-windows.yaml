@@ -1,0 +1,19 @@
+# Hồ sơ cho 2 máy Windows 11 chạy Zalo PC.
+# Theo hướng dẫn Incus cho Windows: tắt Secure Boot (ISO đã nhúng driver virtio),
+# cần vTPM (thêm bằng tao-may.sh: incus config device add <may> vtpm tpm path=/dev/tpm0).
+name: agent-windows
+description: "Agent Windows 11: Zalo PC + Chrome + Claude Code remote-control (tác vụ theo lịch)"
+config:
+  security.secureboot: "false"
+  # Windows khởi động chậm hơn: cho thêm thời gian tắt êm
+  boot.host_shutdown_timeout: "120"
+devices:
+  eth0:
+    type: nic
+    network: br-agent
+    name: eth0
+  root:
+    type: disk
+    pool: may-ao
+    path: /
+    size: 80GiB

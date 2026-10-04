@@ -1,0 +1,25 @@
+# Hồ sơ cho 4 máy agent Linux (tìm hàng, Facebook, bán hàng, hệ thống).
+# Thiết bị: đĩa gốc 40 GiB trên pool may-ao, card mạng vào br-agent.
+# cloud-init.user-data được tao-may.sh nạp từ anh-mau/linux/cloud-init-user-data.yaml
+# (profile này) — còn `agent-linux-tu-mau` là bản sao KHÔNG user-data, dùng khi
+# tạo máy từ ảnh mẫu đã dựng sẵn (anh-mau/linux/tao-anh-mau.sh).
+name: agent-linux
+description: "Agent Linux: Ubuntu 24.04 + XFCE nhẹ + Chrome + noVNC + Claude Code remote-control"
+config:
+  # Ubuntu cloud image chạy tốt với Secure Boot — giữ bật
+  security.secureboot: "true"
+  # Ghim nhân E & RAM đặt ở từng máy (may/*.yaml) để không trùng nhau.
+devices:
+  eth0:
+    type: nic
+    network: br-agent
+    name: eth0
+  root:
+    type: disk
+    pool: may-ao
+    path: /
+    size: 40GiB
+  # Ổ cấu hình cho incus-agent (mặc định đã có với ảnh images:; khai báo rõ cho chắc)
+  agent:
+    type: disk
+    source: agent:config

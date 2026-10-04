@@ -1,0 +1,21 @@
+# Hồ sơ (profile) dùng chung cho CẢ 7 máy ảo: tự khởi động, snapshot đêm.
+# Áp dụng: incus profile create may-ao-chung; incus profile edit may-ao-chung < ho-so/may-ao-chung.yaml
+# (tao-may.sh thiet-lap làm việc này.)
+name: may-ao-chung
+description: "Chung cho 7 máy ảo: tự khởi động + snapshot đêm 02:00, giữ 7 ngày"
+config:
+  # Tự bật khi host khởi động, giãn 10s để không dồn I/O
+  boot.autostart: "true"
+  boot.autostart.delay: "10"
+  boot.autostart.priority: "5"
+  # Chờ tối đa 60s cho máy tắt êm trước khi cắt điện
+  boot.host_shutdown_timeout: "60"
+  # --- Snapshot đêm (cơ chế có sẵn của Incus; không cần cron ngoài) ---
+  # Mỗi ngày 02:00 giờ host. Tên: dem-YYYY-MM-DD. Hết hạn sau 7 ngày thì tự xoá.
+  snapshots.schedule: "0 2 * * *"
+  snapshots.schedule.stopped: "false"
+  snapshots.pattern: "dem-{{ creation_date|date:'2006-01-02' }}"
+  snapshots.expiry: "7d"
+  # Thu thập số liệu cơ bản qua incus-agent (Linux); vô hại với Windows
+  security.agent.metrics: "true"
+devices: {}

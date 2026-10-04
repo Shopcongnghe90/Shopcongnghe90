@@ -1,0 +1,18 @@
+# /etc/systemd/system/may-ao-cach-ly.service
+# Nạp bộ quy tắc nftables cách ly ERP sau khi Incus khởi động.
+[Unit]
+Description=Cách ly mạng ERP khỏi agent (nftables) — hệ máy ảo
+Wants=network-pre.target
+After=network-pre.target incus.service
+ConditionPathExists=/etc/may-ao/cach-ly-erp.nft
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/sbin/nft delete table inet may_ao_cach_ly
+ExecStart=/usr/sbin/nft -f /etc/may-ao/cach-ly-erp.nft
+ExecReload=/bin/sh -c '/usr/sbin/nft delete table inet may_ao_cach_ly 2>/dev/null; /usr/sbin/nft -f /etc/may-ao/cach-ly-erp.nft'
+ExecStop=/usr/sbin/nft delete table inet may_ao_cach_ly
+
+[Install]
+WantedBy=multi-user.target

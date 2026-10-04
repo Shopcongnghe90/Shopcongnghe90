@@ -1,0 +1,65 @@
+#!/usr/sbin/nft -f
+# cach-ly-erp.nft — Cách ly mạng ERP thử nghiệm (br-erp, 10.90.20.0/24)
+#                   khỏi 6 máy agent (br-agent, 10.90.10.0/24).
+#
+# Cơ chế: bảng riêng `may_ao_cach_ly`, chain forward/input có priority thấp hơn
+# (filter - 10) nên được xét TRƯỚC bảng `incus` của Incus. Gói bị DROP ở đây
+# sẽ không bao giờ tới rule "accept" của Incus.
+#
+# Nạp:    nft -f cach-ly-erp.nft           (hoặc systemctl start may-ao-cach-ly)
+# Gỡ:     nft delete table inet may_ao_cach_ly
+# Xem:    nft list table inet may_ao_cach_ly
+#
+# Đổi dải mạng → đổi đồng bộ ở incus/preseed.yaml và may/*.yaml.
+
+table inet may_ao_cach_ly {
+    set mang_agent {
+        type ipv4_addr
+        flags interval
+        elements = { 10.90.10.0/24 }
+    }
+    set mang_erp {
+        type ipv4_addr
+        flags interval
+        elements = { 10.90.20.0/24 }
+    }
+
+    # ---- Giữa các bridge (routed qua host) ---------------------------------
+    chain forward {
+        type filter hook forward priority filter - 10; policy accept;
+
+        # Luồng đã thiết lập (kể cả do rule ngoại lệ bên dưới mở) được đi tiếp
+        ct state established,related accept
+
+        # NGOẠI LỆ (mặc định tắt). Muốn cho máy "hệ thống" vào ERP cổng 8069:
+        # bỏ dấu # dòng dưới. Phải đặt TRƯỚC hai dòng drop.
+        # ip saddr 10.90.10.24 ip daddr 10.90.20.11 tcp dport 8069 ct state new counter accept comment "he-thong -> ERP web"
+
+        ip saddr @mang_agent ip daddr @mang_erp counter drop comment "agent -> ERP: chan"
+        ip saddr @mang_erp ip daddr @mang_agent counter drop comment "ERP -> agent: chan"
+
+        # TUỲ CHỌN: không cho agent/ERP chạm vào mạng LAN của công ty (sửa dải cho đúng)
+        # ip saddr @mang_agent ip daddr 192.168.1.0/24 counter drop comment "agent -> LAN: chan"
+        # ip saddr @mang_erp   ip daddr 192.168.1.0/24 counter drop comment "ERP -> LAN: chan"
+    }
+
+    # ---- Vào chính host ----------------------------------------------------
+    chain input {
+        type filter hook input priority filter - 10; policy accept;
+
+        ct state established,related accept
+
+        # ERP chỉ được dùng DHCP + DNS của Incus trên host, ngoài ra cấm hết
+        # (host vẫn chủ động nối vào ERP được vì chiều đó là output→forward→established).
+        iifname "br-erp" udp dport { 53, 67 } accept
+        iifname "br-erp" tcp dport 53 accept
+        iifname "br-erp" icmp type echo-request accept
+        iifname "br-erp" counter drop comment "ERP -> host: chan"
+
+        # Agent: tương tự (bật nếu muốn siết; để tắt vì agent "hệ thống" có thể cần SSH vào host)
+        # iifname "br-agent" udp dport { 53, 67 } accept
+        # iifname "br-agent" tcp dport 53 accept
+        # iifname "br-agent" tcp dport 22 ip saddr 10.90.10.24 accept comment "he-thong SSH host"
+        # iifname "br-agent" counter drop comment "agent -> host: chan"
+    }
+}

@@ -1,0 +1,7 @@
+# Bí mật & tệp lớn — KHÔNG đưa lên git
+bien-moi-truong.env
+*.iso
+*.img
+*.qcow2
+xuat/
+*.log
