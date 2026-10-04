@@ -439,6 +439,7 @@ class Task(ZeusModel):
     deadline: datetime | None = None
     workflow_id: str | None = None
     trace: TraceContext | None = None
+    untrusted: bool = False  # nguồn gốc từ event không tin cậy (kênh ngoài): action không-đọc-thuần cần duyệt (P-UNTRUSTED-ORIGIN)
 
 
 class TaskNode(ZeusModel):

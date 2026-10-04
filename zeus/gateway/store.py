@@ -147,6 +147,15 @@ class PgControlStore:
     def _task(row: dict) -> Task:
         return Task.model_validate(row["data"]).model_copy(update={"status": TaskStatus(row["status"])})
 
+    async def pending_tasks(self, older_than_s: float, limit: int = 50) -> list[Task]:
+        """Task còn PENDING quá lâu (workflow có thể chưa từng được start): để sweeper start lại (idempotent theo workflow id)."""
+        async with await self._conn() as conn:
+            cur = await conn.execute(
+                "SELECT data, status FROM tasks WHERE status='PENDING' AND created_at < now() - make_interval(secs => %s) ORDER BY created_at LIMIT %s",
+                (older_than_s, limit),
+            )
+            return [self._task(r) for r in await cur.fetchall()]
+
     async def get_task(self, tenant_id: str, task_id: str) -> Task | None:
         async with await self._conn() as conn:
             cur = await conn.execute("SELECT data, status FROM tasks WHERE tenant_id=%s AND task_id=%s", (tenant_id, task_id))

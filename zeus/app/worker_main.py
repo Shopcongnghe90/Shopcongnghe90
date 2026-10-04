@@ -30,6 +30,12 @@ async def sweep_loop(system: Any, stop: asyncio.Event, interval_s: float) -> Non
                 log.info("dispatcher sweep: %s", out)
         except Exception:  # vòng bảo trì không được làm chết worker
             log.exception("dispatcher sweep lỗi")
+        try:
+            resumed = await system.facade.resume_pending()
+            if resumed:
+                log.info("start lại workflow cho task PENDING: %s", resumed)
+        except Exception:  # noqa: BLE001
+            log.exception("resume task PENDING lỗi")
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(stop.wait(), interval_s)
 

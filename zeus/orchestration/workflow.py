@@ -33,6 +33,14 @@ with workflow.unsafe.imports_passed_through():
 _NON_RETRYABLE = ["BudgetExceeded", "PolicyDenied", "ValidationError", "KeyError"]
 
 
+def _root_cause(exc: BaseException) -> str:
+    """Nguyên nhân gốc của ActivityError (thay vì chỉ 'Activity task failed')."""
+    cur: BaseException = exc
+    while cur.__cause__ is not None:
+        cur = cur.__cause__
+    return f"{type(cur).__name__}: {cur}"
+
+
 @workflow.defn(name=T.WORKFLOW_NAME)
 class TaskWorkflow:
     def __init__(self) -> None:
@@ -117,7 +125,7 @@ class TaskWorkflow:
             await self._act(inp, T.ACT_STATUS, None, task.task_id, TaskStatus.AWAITING_APPROVAL, timeout_s=30)
             self._pending_approvals = ids
             self._phase = "AWAITING_APPROVAL"
-            timeout = inp.approval_timeout_s if inp.approval_timeout_s is not None else 3600
+            timeout = bundle.timeout_s if workflow.patched("approval-timeout-from-bundle") else (inp.approval_timeout_s if inp.approval_timeout_s is not None else 3600)
             decided = lambda: self._cancelled or any(self._decisions.get(i) and self._decisions[i].status is ApprovalStatus.REJECTED for i in ids) or all(i in self._decisions for i in ids)  # noqa: E731
             states: dict[str, str] = {}
             try:
@@ -127,6 +135,12 @@ class TaskWorkflow:
                 rec: T.ApprovalStates = await self._act(inp, T.ACT_RECONCILE, T.ApprovalStates, task.tenant_id, ids, True, timeout_s=60)
                 states = rec.states
             self._pending_approvals = []
+            if (self._cancelled or any(s == ApprovalStatus.REJECTED.value for s in states.values())) and workflow.patched("approval-expire-on-exit"):
+                # huỷ/từ chối: các approval anh em còn PENDING phải hết hạn, tránh "zombie" hiện cho operator (R11)
+                try:
+                    await self._act(inp, T.ACT_RECONCILE, T.ApprovalStates, task.tenant_id, ids, True, timeout_s=60)
+                except Exception:  # noqa: BLE001 - không được chặn verdict
+                    pass
             if self._cancelled:
                 return await self._finish(inp, task, started_ms, cancelled=True, notes=[self._cancel_reason], human_intervention=True, **common)
             if any(s == ApprovalStatus.REJECTED.value for s in states.values()):
@@ -161,7 +175,10 @@ class TaskWorkflow:
                 for t in running.values():
                     t.cancel()
                 await asyncio.gather(*running.values(), return_exceptions=True)
-                await self._act(inp, T.ACT_CANCEL_ASSIGN, int, task, list(running), timeout_s=60)
+                try:  # lỗi huỷ assignment không được làm workflow chết: saga + judge phải luôn chạy (R2)
+                    await self._act(inp, T.ACT_CANCEL_ASSIGN, int, task, list(running), timeout_s=60)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"huỷ assignment lỗi: {_root_cause(exc)}")
                 for nid in running:
                     self._node_status[nid] = "CANCELLED"
                 running.clear()
@@ -172,7 +189,7 @@ class TaskWorkflow:
                 exc = t.exception()
                 if exc is not None:
                     failed[nid] = None
-                    errors.append(f"node {nid}: {type(exc).__name__}: {exc}")
+                    errors.append(f"node {nid}: {_root_cause(exc)}")
                     self._node_status[nid] = "FAILED"
                     continue
                 run = T.NodeRun(node=node, result=t.result())
@@ -209,7 +226,11 @@ class TaskWorkflow:
             notes.append("node không chạy: " + ", ".join(skipped))
         if self._cancelled:
             notes.append(self._cancel_reason)
-        return await self._finish(inp, task, started_ms, results=runs, rollback_performed=rolled, human_intervention=human, cancelled=self._cancelled, notes=notes, **common)
+        failed_nodes = [graph.node(nid) for nid, r in failed.items() if r is None]
+        return await self._finish(
+            inp, task, started_ms, results=runs, rollback_performed=rolled, human_intervention=human, cancelled=self._cancelled, notes=notes,
+            failed_nodes=failed_nodes, skipped_node_ids=skipped, **common,
+        )
 
 
 @workflow.defn(name=T.SCHEDULED_WORKFLOW_NAME)

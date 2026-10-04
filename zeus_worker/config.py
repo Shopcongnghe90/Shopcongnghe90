@@ -33,6 +33,8 @@ class WorkerConfig:
     heartbeat_interval_s: float = 15.0
     poll_wait_s: int = 20
     max_output_bytes: int = 64 * 1024
+    send_retries: int = 6  # số lần gửi kết quả/upload (lỗi mạng, 5xx, 429); server idempotent nên gửi lại an toàn
+    send_retry_base_s: float = 1.0  # backoff gấp đôi mỗi lần, tối đa 30s
 
     def token(self) -> str:
         if self.token_file and Path(self.token_file).exists():
@@ -66,6 +68,8 @@ class WorkerConfig:
             test_target=str(ex.get("test_target", "")),
             heartbeat_interval_s=float(wk.get("heartbeat_interval_s", 15)),
             poll_wait_s=int(wk.get("poll_wait_s", 20)),
+            send_retries=int(wk.get("send_retries", 6)),
+            send_retry_base_s=float(wk.get("send_retry_base_s", 1.0)),
         )
 
     @classmethod

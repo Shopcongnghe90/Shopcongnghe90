@@ -89,7 +89,7 @@ def apply_migrations(dsn: str, directory: str | Path = "migrations") -> list[Mig
     """Áp dụng các migration chưa có. Trả danh sách vừa áp dụng."""
     migrations = discover_migrations(directory)
     applied_now: list[Migration] = []
-    with psycopg.connect(dsn, autocommit=True) as conn:
+    with psycopg.connect(dsn, autocommit=True, connect_timeout=10) as conn:
         conn.execute("SELECT pg_advisory_lock(%s)", (_LOCK_KEY,))
         try:
             conn.execute(_BOOTSTRAP)
@@ -119,7 +119,7 @@ def apply_migrations(dsn: str, directory: str | Path = "migrations") -> list[Mig
 
 def migration_status(dsn: str, directory: str | Path = "migrations") -> list[dict[str, object]]:
     migrations = discover_migrations(directory)
-    with psycopg.connect(dsn, autocommit=True) as conn:
+    with psycopg.connect(dsn, autocommit=True, connect_timeout=10) as conn:
         conn.execute(_BOOTSTRAP)
         done = _applied(conn)
     rows: list[dict[str, object]] = []

@@ -56,7 +56,8 @@ class Stack:
             return c.execute(sql, args).fetchall()
 
     async def ingest(self, text: str, external_id: str) -> dict[str, Any]:
-        body = {"event": {"tenant_id": TENANT, "channel": "internal", "kind": "command", "text": text, "external_id": external_id}}
+        body = {"event": {"tenant_id": TENANT, "channel": "internal", "kind": "command", "text": text, "external_id": external_id,
+                          "signature_verified": True, "untrusted": False}}  # lệnh vận hành đã xác thực (API token)
         r = await self.http.post(Paths.EVENTS, json=body, headers={HEADER_TENANT: TENANT})
         assert r.status_code == 200, r.text
         return r.json()
@@ -162,6 +163,8 @@ async def test_e2e_event_to_worker_to_evidence_to_workbench(stack: Stack) -> Non
     assert r.status_code == 200 and r.json()["final_outcome"] == "VERIFIED_SUCCESS"
     r = await stack.http.get(Paths.EVIDENCE.format(record_id=ev[0]["record_id"]), headers={HEADER_TENANT: "khac"})
     assert r.status_code == 404  # cô lập tenant (CCR EvidenceStore.get tenant_id)
+    for exp in stack.system.deps.spans.exporters:  # exporter chạy nền (R8): chờ ghi xong trước khi đọc
+        getattr(exp, "flush", lambda *_: True)(10)
     assert stack.q("SELECT count(*) AS n FROM trace_spans WHERE task_id=%s AND name='task.lifecycle'", task_id) == [{"n": 1}]
 
     # D: Workbench hiển thị task + bằng chứng + DAG + worker

@@ -154,3 +154,20 @@ Trạng thái: `ACCEPTED` · `PROPOSED` · `SUPERSEDED` · `GATED` (chờ ngư�
 - **Lý do:** Ít thành phần nhất chạy được không cần Claude Cloud; Control API trước đây không có xác thực (rủi ro A).
 - **Bằng chứng:** `tests/shared/test_app_wiring.py` (401/503/404 đúng chỗ, CLI phát hành token); smoke tiến trình thật ở ADR-018.
 - **Trạng thái:** ACCEPTED (cài trên host thật: GATED theo ADR-012, G1/G2)
+
+## ADR-021 — Review round 2: sửa bảo mật + độ tin cậy (đổi hợp đồng nhỏ, tương thích ngược)
+- **Ngày:** 2026-10-04
+- **Quyết định (hợp đồng/shared):**
+  1. `Task.untrusted: bool = False` (contracts, cộng thêm). `EventGateway.ingest` và `classify_and_assess` đặt `untrusted` từ `Event.untrusted`. Policy Engine thêm luật `P-UNTRUSTED-ORIGIN`: task untrusted chỉ tự chạy action khớp `untrusted.auto_actions` (mặc định `*.read|get|list|search|check`), còn lại REQUIRE_APPROVAL (SEC-3). Event từ API/Workbench muốn được tin cậy phải mang `signature_verified=true, untrusted=false` và thuộc kênh nội bộ (đã đúng từ trước); test e2e cập nhật tương ứng.
+  2. Cổng duyệt theo rủi ro task: nếu `task.risk >= approval_min` mà mọi node đều thấp thì `prepare_approvals` tạo một approval `task.start` (action_id cố định theo task => retry không trùng) trước khi RUNNING (SEC-2).
+  3. `PolicyConfig` từ chối `required_approvers > 1` lúc nạp (chưa có cơ chế đa người duyệt; trước đây chấp nhận âm thầm) (SEC-5). Triển khai đa người duyệt = ADR mới.
+  4. Log: `JsonFormatter` che `/bot<token>/`, `access_token=`, `Bearer ...`; logger `httpx`/`httpcore` bị hạ xuống WARNING (SEC-1).
+  5. Backup: snapshot REPEATABLE READ, thêm bảng `tenants`, ghi tệp nguyên tử, checksum sidecar phủ cả header, tuỳ chọn HMAC (`ZEUS_BACKUP_HMAC_KEY`), restore từ chối dòng có `tenant_id` khác tenant đích (SEC-4, R10). BrainBackup không thay thế pg_dump toàn hệ thống.
+  6. Migration `102_a_tool_idempotency.sql`: khoá idempotency bền vững của Tool Gateway (chiếm trước, hoàn tất sau; PENDING không rõ kết quả => không chạy lại, báo người vận hành) (R7). `DefaultToolGateway(idempotency=...)`, mặc định in-memory.
+  7. Orchestration: `JudgeRequest.failed_nodes/skipped_node_ids` — node lỗi/không chạy không thể cho PASS (R1); `ApprovalBundle.timeout_s` lấy từ policy (R11); `judge_and_record` idempotent khi Temporal retry (R4); activity dispatch chờ worker có heartbeat (không còn 17s retry), hủy/dùng lại kết quả của attempt trước thay vì chạy trùng, trần timeout assignment nhỏ hơn start_to_close (R6/R9); workflow dùng `workflow.patched` cho lệnh mới (reconcile khi huỷ/từ chối, timeout từ bundle).
+  8. Mất kết quả worker (R5): thin worker retry gửi kết quả/upload (backoff, không retry 4xx); `Dispatcher.sweep` hoàn thành activity cho assignment COMPLETED/FAILED/CANCELLED chưa `activity_completed`; completer coi NOT_FOUND là "đã xong".
+  9. Ingest (R3): task_id xác định theo event; ingest trùng mà chưa có task thì xử lý tiếp; trùng mà task còn PENDING thì start lại workflow (idempotent); `PgDedupe` hai pha (claim hết hạn sau 120s nếu chưa confirm).
+  10. DB (R8): `connect_timeout` mặc định 10s (`ZEUS_DB_CONNECT_TIMEOUT`); `PgSpanExporter(background=True)` ghi span bằng thread nền, không chặn event loop.
+- **Lý do:** Review round 2 (SEC-1..5, R1..R11), mỗi lỗi được tái hiện rồi sửa kèm test hồi quy fail-trước/pass-sau.
+- **Bằng chứng:** `tests/control_plane/test_security_round2.py`, `tests/control_plane/test_reliability_round2.py`, `tests/workers/test_round2_reliability.py`, `tests/brain_learning/test_backup_round2.py`, `tests/shared/test_obs.py`.
+- **Trạng thái:** ACCEPTED

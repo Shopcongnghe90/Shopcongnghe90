@@ -6,12 +6,13 @@ Worker API (C) gọi ``AssignmentQueue.complete`` -> nhận token -> ``client.ge
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import hashlib
 import inspect
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from temporalio import activity
@@ -93,6 +94,8 @@ class ControlDeps:
     queue: AssignmentQueue | None = None
     spans: SpanRecorder | None = None
     max_assignment_attempts: int = T.MAX_NODE_ATTEMPTS
+    no_worker_wait_s: float | None = None  # chờ worker phù hợp trong activity (heartbeat) trước khi ném lỗi retry; None = nửa start_to_close
+    no_worker_poll_s: float = 1.0
 
 
 def _trace(task: Task) -> TraceContext:
@@ -106,6 +109,23 @@ def root_span_id(trace_id: str) -> str:
 
 def assignment_id(task_id: str, node_id: str, attempt: int) -> str:
     return "asg_" + hashlib.sha256(f"{task_id}/{node_id}".encode()).hexdigest()[:20] + f"_a{attempt}"
+
+
+def _align_verdict(verdict: Verdict, rec: EvidenceRecord) -> Verdict:
+    """Verdict nhất quán với EvidenceRecord đã ghi (retry có thể cho kết luận judge khác bản đầu)."""
+    if verdict.outcome is rec.final_outcome:
+        return verdict
+    if rec.final_outcome is Outcome.VERIFIED_SUCCESS:
+        decision = VerdictDecision.PASS
+    elif rec.final_outcome is Outcome.VERIFIED_FAILURE:
+        decision = VerdictDecision.FAIL
+    else:
+        decision = VerdictDecision.NEEDS_HUMAN if verdict.decision is VerdictDecision.PASS else verdict.decision
+    return Verdict(
+        task_id=verdict.task_id, decision=decision, outcome=rec.final_outcome, judge=rec.verified_by or verdict.judge,
+        evidence_ids=[rec.record_id] if rec.final_outcome is not Outcome.UNVERIFIED or decision is VerdictDecision.PASS else verdict.evidence_ids,
+        reasons=[*verdict.reasons, "kết luận lấy từ EvidenceRecord đã ghi (activity retry)"],
+    )
 
 
 def _accepts_context(queue: Any) -> bool:
@@ -168,6 +188,7 @@ class ControlActivities:
                     "workflow_id": task.workflow_id or task.task_id,
                     "trace": _trace(task),
                     "status": TaskStatus.PENDING,
+                    "untrusted": task.untrusted or (inp.event is not None and inp.event.untrusted),
                 }
             )
             await self.d.store.put_task(task)
@@ -201,7 +222,7 @@ class ControlActivities:
         d = self.d
         cfg = d.gateway.policy.config
         timeout = timeout_s if timeout_s is not None else cfg.approval_timeout_s
-        out = T.ApprovalBundle()
+        out = T.ApprovalBundle(timeout_s=int(timeout))
         existing = {a.action.action_id: a for a in await d.approvals.list(task.tenant_id)}
         with self._span("control.prepare_approvals", task):
             for node in plan.graph.nodes:
@@ -232,6 +253,25 @@ class ControlActivities:
                     ApprovalRequest(tenant_id=task.tenant_id, task_id=task.task_id, action=action, risk=risk, summary_vi=summary or "Cần duyệt", expires_at=utcnow() + timedelta(seconds=timeout))
                 )
                 out.requests.append(req)
+            if not out.requests and not out.denied_reasons and task.risk >= cfg.approval_min:
+                # Risk Engine xếp task >= approval_min (vd nghi injection) nhưng mọi node đều thấp: vẫn phải có người duyệt cả task
+                # trước khi RUNNING (SEC-2). action_id cố định theo task để activity retry không tạo trùng.
+                action = TypedAction(
+                    action_id="act_start_" + hashlib.sha256(task.task_id.encode()).hexdigest()[:24],
+                    tenant_id=task.tenant_id, task_id=task.task_id, name="task.start", args={"goal": task.goal[:200], "risk": task.risk.value}, requested_by="risk-engine",
+                )
+                prev = existing.get(action.action_id)
+                if prev is not None:
+                    out.requests.append(prev)
+                else:
+                    out.requests.append(
+                        await d.approvals.request(
+                            ApprovalRequest(
+                                tenant_id=task.tenant_id, task_id=task.task_id, action=action, risk=task.risk,
+                                summary_vi=f"Duyệt chạy task rủi ro {task.risk.value}: {task.goal[:120]}", expires_at=utcnow() + timedelta(seconds=timeout),
+                            )
+                        )
+                    )
         return out
 
     @activity.defn(name=T.ACT_RECONCILE)
@@ -274,22 +314,23 @@ class ControlActivities:
             return res
         return await self._dispatch(task, node, action, spec.timeout_s, list({*spec.required_capabilities, *node.required_capabilities}))
 
-    async def _dispatch(self, task: Task, node: TaskNode, action: TypedAction, timeout_s: int, caps: list[str]) -> None:
+    async def _dispatch(self, task: Task, node: TaskNode, action: TypedAction, timeout_s: int, caps: list[str]) -> AssignmentResult | None:
         d = self.d
         if d.scheduler is None or d.workers is None or d.queue is None:
             raise ApplicationError("dispatch chưa được cấu hình (scheduler/workers/queue)", non_retryable=True)
         info = activity.info()
-        workers = [w for w in await d.workers.list() if w.status is not WorkerStatus.OFFLINE]
-        hbs = {}
-        for w in workers:
-            hb = await d.workers.last_heartbeat(w.worker_id)
-            if hb is not None:
-                hbs[w.worker_id] = hb
+        if info.attempt > 1:
+            # Activity retry (timeout/mất kết quả): KHÔNG chạy lại hành động ngoài nếu lần trước đã có kết quả; huỷ lần trước còn treo (R6/R5)
+            reused = await self._settle_prior_attempts(task, node, info.attempt)
+            if reused is not None:
+                return reused
         sched_node = node.model_copy(update={"required_capabilities": caps})
-        decision = await d.scheduler.schedule(task, sched_node, workers, hbs)
-        if decision.worker_id is None:
-            # Không worker đủ điều kiện: retry có backoff của Temporal = xếp hàng, không mất task.
-            raise ApplicationError(f"chưa có worker phù hợp cho node {node.node_id}: {decision.reason}")
+        decision = await self._wait_for_worker(task, sched_node, info)
+        # trần thực thi của assignment không được vượt phần còn lại của activity (cộng overhead upload/hoàn thành)
+        stc = info.start_to_close_timeout
+        if stc:
+            remaining = stc.total_seconds() - (datetime.now(timezone.utc) - info.started_time).total_seconds()
+            timeout_s = max(1, min(timeout_s, int(remaining - min(30.0, 0.1 * stc.total_seconds()))))
         asg = TaskAssignment(
             assignment_id=assignment_id(task.task_id, node.node_id, info.attempt),
             task_id=task.task_id,
@@ -307,6 +348,50 @@ class ControlActivities:
         else:
             await d.queue.enqueue(asg, decision.worker_id, task_token=info.task_token)
         await d.store.save_node(task.task_id, node.model_copy(update={"status": TaskStatus.SCHEDULED}), attempts=info.attempt)
+        return None
+
+    async def _wait_for_worker(self, task: Task, sched_node: TaskNode, info: Any) -> Any:
+        """Chờ (có heartbeat, huỷ được) tới khi có worker đủ điều kiện; hết hạn chờ => lỗi retriable (R9)."""
+        d = self.d
+        stc = info.start_to_close_timeout.total_seconds() if info.start_to_close_timeout else 120.0
+        wait = d.no_worker_wait_s if d.no_worker_wait_s is not None else stc * 0.5
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(0.0, wait)
+        poll = max(0.05, d.no_worker_poll_s)
+        while True:
+            workers = [w for w in await d.workers.list() if w.status is not WorkerStatus.OFFLINE]  # type: ignore[union-attr]
+            hbs = {}
+            for w in workers:
+                hb = await d.workers.last_heartbeat(w.worker_id)  # type: ignore[union-attr]
+                if hb is not None:
+                    hbs[w.worker_id] = hb
+            decision = await d.scheduler.schedule(task, sched_node, workers, hbs)  # type: ignore[union-attr]
+            if decision.worker_id is not None:
+                return decision
+            if loop.time() >= deadline:
+                raise ApplicationError(f"chưa có worker phù hợp cho node {sched_node.node_id}: {decision.reason}")
+            activity.heartbeat("waiting-worker")
+            await asyncio.sleep(min(poll, max(0.01, deadline - loop.time())))
+            poll = min(poll * 1.5, 5.0)
+
+    async def _settle_prior_attempts(self, task: Task, node: TaskNode, attempt: int) -> AssignmentResult | None:
+        q: Any = self.d.queue
+        for k in range(1, attempt):
+            aid = assignment_id(task.task_id, node.node_id, k)
+            status_fn, result_fn = getattr(q, "status", None), getattr(q, "result_of", None)
+            st = await status_fn(aid) if status_fn else None
+            if st is None:
+                continue
+            if st["status"] == "COMPLETED" and result_fn is not None:
+                res = await result_fn(aid)
+                if res is not None:
+                    if hasattr(q, "mark_activity_completed"):
+                        await q.mark_activity_completed(aid)  # token cũ đã chết: kết quả được trao qua activity mới
+                    return res
+            elif st["status"] in ("QUEUED", "LEASED"):
+                with contextlib.suppress(KeyError):
+                    await (q.cancel_ex(aid) if hasattr(q, "cancel_ex") else q.cancel(aid))
+        return None
 
     async def _persist_node(self, task: Task, node: TaskNode, res: AssignmentResult) -> None:
         status = TaskStatus.SUCCEEDED if res.result.ok else TaskStatus.FAILED
@@ -335,7 +420,10 @@ class ControlActivities:
         n = 0
         for nid in node_ids:
             for attempt in range(1, self.d.max_assignment_attempts + 1):
-                await self.d.queue.cancel(assignment_id(task.task_id, nid, attempt))
+                try:
+                    await self.d.queue.cancel(assignment_id(task.task_id, nid, attempt))
+                except KeyError:  # attempt này chưa từng được enqueue (hoặc node chạy local): không có gì để huỷ
+                    continue
                 n += 1
         return n
 
@@ -351,7 +439,8 @@ class ControlActivities:
             vendor = planner_vendor(planner)
             provider = ProviderKind(planner.split(":", 1)[0]) if vendor else None
             model_name = planner.split(":", 1)[1] if vendor else None
-            outcome = derive_outcome(items, [], all(a.ok for a in actions)) if actions and not req.cancelled else Outcome.UNVERIFIED
+            incomplete = [*(n.node_id for n in req.failed_nodes), *req.skipped_node_ids]
+            outcome = derive_outcome(items, [], all(a.ok for a in actions) and not incomplete) if actions and not req.cancelled else Outcome.UNVERIFIED
             rid = "evr_" + hashlib.sha256(f"{task.task_id}".encode()).hexdigest()[:32]
             feats = req.route_features
             rec = EvidenceRecord(
@@ -377,6 +466,8 @@ class ControlActivities:
                 rollback_performed=req.rollback_performed,
                 final_outcome=outcome,
                 verified_by="deterministic",
+                # ổn định theo request để Temporal retry tạo đúng cùng payload (EvidenceStore bất biến khi verified)
+                **({"created_at": datetime.fromtimestamp(req.finished_at_ms / 1000, tz=timezone.utc)} if req.finished_at_ms else {}),
             )
             judge: Judge = d.judge
             makers = {p for p in (provider,) if p is not None}
@@ -387,12 +478,22 @@ class ControlActivities:
                 verdict = Verdict(task_id=task.task_id, decision=VerdictDecision.FAIL if req.cancelled else req.abort_decision, outcome=Outcome.UNVERIFIED, judge="control", reasons=[reason, *req.notes])
             else:
                 verdict = await judge.judge(task, [rec])
+                if incomplete and verdict.decision is VerdictDecision.PASS:
+                    # node lỗi/không chạy: bằng chứng của các node còn lại không đủ để tuyên bố task thành công (R1)
+                    verdict = Verdict(
+                        task_id=task.task_id, decision=VerdictDecision.FAIL, outcome=Outcome.UNVERIFIED, judge=verdict.judge,
+                        evidence_ids=verdict.evidence_ids, reasons=["task chưa hoàn tất: node lỗi/không chạy: " + ", ".join(incomplete)],
+                    )
                 if req.notes:
                     verdict = verdict.model_copy(update={"reasons": [*verdict.reasons, *req.notes]})
             final = rec.model_copy(update={"final_outcome": verdict.outcome, "verified_by": verdict.judge})
             final = EvidenceRecord.model_validate(final.model_dump(mode="python"))  # chạy lại validator "claims are not evidence"
-            if await d.evidence.get(final.record_id, tenant_id=task.tenant_id) is None:
+            prior = await d.evidence.get(final.record_id, tenant_id=task.tenant_id)
+            if prior is None:
                 await d.evidence.put(final)
+            else:  # activity retry sau khi evidence đã ghi: bản đã ghi là sự thật (bất biến), không ghi đè (R4)
+                final = prior
+                verdict = _align_verdict(verdict, prior)
             await d.outcomes.record(final)
             status = (
                 TaskStatus.CANCELLED if req.cancelled
@@ -404,6 +505,8 @@ class ControlActivities:
             await d.store.set_task_status(task.task_id, status)
             for r in req.results:  # node dispatch bất đồng bộ chỉ biết kết quả khi workflow đã thu về
                 await self._persist_node(task, r.node, r.result)
+            for n in req.failed_nodes:  # node ném exception: ghi FAILED thay vì để PENDING
+                await d.store.save_node(task.task_id, n.model_copy(update={"status": TaskStatus.FAILED}), result={"ok": False, "error": "node thất bại (exception)"})
             self._emit_root_span(task, req, verdict)
             return T.JudgeOutput(verdict=verdict, record=final)
 

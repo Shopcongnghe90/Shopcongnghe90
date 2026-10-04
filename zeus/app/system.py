@@ -20,7 +20,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from zeus.api.router import ControlServices, NullWorkflowControl, TemporalWorkflowControl, WorkflowControl
+from zeus.api.router import ControlServices, NullWorkflowControl, TemporalWorkflowControl, WorkflowControl, task_finished_expire
 from zeus.brain.embeddings import HashingEmbedding
 from zeus.brain.retrieval import PgBrainRetriever
 from zeus.brain.store import PgMemoryStore
@@ -65,6 +65,7 @@ from zeus.policy.approvals import PgApprovalStore
 from zeus.policy.budget import PgBudgetLedger
 from zeus.policy.engine import DefaultPolicyEngine, PolicyConfig
 from zeus.policy.gateway import DefaultToolGateway, PgAudit, RemoteToolProvider
+from zeus.policy.idempotency import PgIdempotency
 from zeus.risk.engine import DefaultRiskEngine
 from zeus.storage.db import aconnect
 from zeus.storage.spans import PgSpanExporter
@@ -78,6 +79,15 @@ from zeus.workers.registry import PgWorkerRegistry
 from zeus.workers.scheduler import DeterministicScheduler, PgScheduleStore
 
 log = logging.getLogger("zeus.app.system")
+
+
+def _is_activity_gone(exc: BaseException) -> bool:
+    """RPCError NOT_FOUND từ Temporal: activity đã hoàn thành / hết hạn / workflow đã kết thúc."""
+    try:
+        from temporalio.service import RPCError, RPCStatusCode
+    except ImportError:  # pragma: no cover
+        return False
+    return isinstance(exc, RPCError) and exc.status is RPCStatusCode.NOT_FOUND
 
 
 # --------------------------------------------------------------------------- danh mục action của thin worker
@@ -126,7 +136,15 @@ class ControlPlaneCompleter:
             did = await self._decision_id(res.assignment_id)
             if did:
                 res = res.model_copy(update={"metrics": {**res.metrics, "schedule_decision_id": did}})
-        await self.client.get_async_activity_handle(task_token=task_token).complete(res)
+        try:
+            await self.client.get_async_activity_handle(task_token=task_token).complete(res)
+        except Exception as exc:  # noqa: BLE001
+            # Activity đã hoàn thành/timeout/workflow đã kết thúc (NOT_FOUND): kết quả này không còn ai chờ, coi như xong
+            # để worker/sweep không retry vô hạn. Lỗi khác (Temporal tạm mất) vẫn ném để được thử lại.
+            if _is_activity_gone(exc):
+                log.warning("activity cho assignment %s không còn chờ (đã xong/timeout): bỏ qua", res.assignment_id)
+                return
+            raise
 
     async def complete(self, task_token: bytes, result: ActionResult) -> None:
         """Đường huỷ/hết lease của C chỉ có ActionResult (action_id = assignment_id): bọc thành AssignmentResult."""
@@ -241,15 +259,33 @@ class ControlFacade:
 
     async def ingest(self, event: Event) -> EventIngestResponse:
         res = await self.s.gateway.ingest(event)
+        if res.duplicate and res.resume_task is not None:  # lần ingest trước tạo task nhưng workflow chưa start được (R3)
+            await self.s.workflows.start(res.resume_task, None)
         if res.duplicate or res.task is None:
             return EventIngestResponse(event_id=res.event.event_id, accepted=True, duplicate=True, task_id=res.task_id, workflow_id=res.task_id)
         wf_id = await self.s.workflows.start(res.task, None)
         return EventIngestResponse(event_id=res.event.event_id, accepted=True, duplicate=False, task_id=res.task.task_id, workflow_id=wf_id)
 
+    async def resume_pending(self, older_than_s: float = 60.0) -> list[str]:
+        """Sweeper (R3): start lại workflow cho task PENDING quá lâu (Temporal tạm mất lúc ingest). Start idempotent theo task id."""
+        pending = getattr(self.s.store, "pending_tasks", None)
+        if pending is None:
+            return []
+        started: list[str] = []
+        for task in await pending(older_than_s):
+            try:
+                await self.s.workflows.start(task, None)
+                started.append(task.task_id)
+            except Exception:  # noqa: BLE001 - thử lại ở vòng sau
+                log.exception("resume workflow cho %s lỗi", task.task_id)
+        return started
+
     async def decide(self, decision: ApprovalDecision, tenant_id: str | None = None) -> ApprovalRequest:
         req = await self.s.approvals.get(decision.approval_id)
         if req is None or (tenant_id is not None and req.tenant_id != tenant_id):
             raise KeyError(decision.approval_id)
+        if await task_finished_expire(self.s.store, self.s.approvals, req):
+            raise ValueError(f"task {req.task_id} đã kết thúc; yêu cầu duyệt {req.approval_id} đã hết hạn")
         updated = await self.s.approvals.decide(decision)
         if updated.task_id and updated.status in (ApprovalStatus.APPROVED, ApprovalStatus.REJECTED):
             await self.s.workflows.signal_approval(updated.task_id, decision.model_copy(update={"status": updated.status}))
@@ -349,7 +385,7 @@ def build_system(
         providers.append(build_outbound(ch_cfg, adapters, httpx.AsyncClient(timeout=30), e))
 
     # ---- A: tool gateway + control deps
-    gateway = DefaultToolGateway(providers, DefaultPolicyEngine(policy_cfg), approvals, audit)
+    gateway = DefaultToolGateway(providers, DefaultPolicyEngine(policy_cfg), approvals, audit, idempotency=PgIdempotency(dsn))
     intent, risk = DefaultIntentEngine(model_broker), DefaultRiskEngine()
     deps = ControlDeps(
         intent=intent, risk=risk,
@@ -358,7 +394,7 @@ def build_system(
         judge=DeterministicJudge(model_broker),
         gateway=gateway, approvals=approvals, store=store, evidence=evidence, outcomes=outcomes, retriever=retriever,
         scheduler=PersistingScheduler(scheduler, schedules), workers=registry, queue=queue,
-        spans=SpanRecorder([PgSpanExporter(dsn)], {"service.name": "zeus-control"}),
+        spans=SpanRecorder([PgSpanExporter(dsn, background=True)], {"service.name": "zeus-control"}),
     )
     wf = workflows or (TemporalWorkflowControl(temporal_client, task_queue) if temporal_client is not None else NullWorkflowControl())
     control = ControlServices(gateway=EventGateway(store, intent, risk), store=store, approvals=approvals, evidence=evidence,

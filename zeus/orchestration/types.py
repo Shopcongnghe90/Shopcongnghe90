@@ -47,6 +47,7 @@ class ClassifyResult(ZeusModel):
 class ApprovalBundle(ZeusModel):
     requests: list[ApprovalRequest] = Field(default_factory=list)
     denied_reasons: list[str] = Field(default_factory=list)
+    timeout_s: int = 3600  # hạn chờ duyệt thực tế (lấy từ policy khi workflow không ép), workflow dùng đúng giá trị này
 
 
 class ApprovalStates(ZeusModel):
@@ -79,6 +80,8 @@ class JudgeRequest(ZeusModel):
     started_at_ms: int = 0
     finished_at_ms: int = 0
     notes: list[str] = Field(default_factory=list)
+    failed_nodes: list[TaskNode] = Field(default_factory=list)  # node ném exception (không có kết quả): task KHÔNG được PASS
+    skipped_node_ids: list[str] = Field(default_factory=list)  # node không chạy do lỗi/huỷ: task KHÔNG được PASS
     abort_reason: str | None = None  # dừng sớm (bị từ chối/chặn/hết hạn duyệt): verdict do control quyết định, không cần judge
     abort_decision: VerdictDecision = VerdictDecision.FAIL
     abort_status: TaskStatus = TaskStatus.FAILED

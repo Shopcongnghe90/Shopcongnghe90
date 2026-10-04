@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from zeus.contracts.models import (
     ActionSpec,
@@ -42,6 +42,16 @@ class PolicyConfig(ZeusModel):
     per_task_usd: float | None = None
     per_day_usd: float | None = None
     tenants: dict[str, TenantPolicy] = Field(default_factory=dict)
+    # Task có nguồn gốc untrusted (khách ngoài kênh) chỉ được tự chạy các action đọc thuần này; còn lại cần duyệt.
+    untrusted_auto_actions: list[str] = Field(default_factory=lambda: ["*.read", "*.get", "*.list", "*.search", "*.check"])
+
+    @model_validator(mode="after")
+    def _single_approver_only(self) -> "PolicyConfig":
+        # Kiểm soát "2 người duyệt" CHƯA được thực thi (một APPROVED là đủ) => từ chối cấu hình thay vì chấp nhận âm thầm.
+        bad = {k: v for k, v in self.required_approvers.items() if int(v) > 1}
+        if bad:
+            raise ValueError(f"required_approvers > 1 chưa được hỗ trợ ({bad}); đặt 1 hoặc triển khai đa người duyệt trước")
+        return self
 
     def tenant(self, tenant_id: str) -> TenantPolicy:
         return self.tenants.get(tenant_id) or self.tenants.get("default") or TenantPolicy()
@@ -58,6 +68,7 @@ class PolicyConfig(ZeusModel):
             approval_timeout_s=int(appr.get("timeout_s", 3600)),
             required_approvers=dict(appr.get("required_approvers", {"R2": 1, "R3": 1})),
             deny_actions=list(raw.get("deny_actions", [])),
+            **({"untrusted_auto_actions": list(raw["untrusted"]["auto_actions"])} if (raw.get("untrusted") or {}).get("auto_actions") is not None else {}),
             per_task_usd=bud.get("per_task_usd"),
             per_day_usd=bud.get("per_day_usd"),
             tenants={k: TenantPolicy(**v) for k, v in (raw.get("tenants") or {}).items()},
@@ -111,6 +122,14 @@ class DefaultPolicyEngine:
                 reasons=[f"rủi ro {level.value} cần người duyệt"],
                 rule_ids=[f"P-APPROVAL-{level.value}"],
                 required_approvers=n,
+                **base,
+            )
+        if task is not None and task.untrusted and not action.dry_run and not any(fnmatch.fnmatchcase(action.name, g) for g in cfg.untrusted_auto_actions):
+            return PolicyDecision(
+                effect=PolicyEffect.REQUIRE_APPROVAL,
+                reasons=["task từ nguồn không tin cậy: action có tác dụng cần người duyệt"],
+                rule_ids=["P-UNTRUSTED-ORIGIN"],
+                required_approvers=1,
                 **base,
             )
         return PolicyDecision(effect=PolicyEffect.ALLOW, reasons=[f"rủi ro {level.value}"], rule_ids=[f"P-ALLOW-{level.value}"], **base)

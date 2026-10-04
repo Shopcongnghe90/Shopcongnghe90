@@ -210,6 +210,26 @@ class PgAssignmentQueue:
             )
             return cur.rowcount == 1
 
+    async def result_of(self, assignment_id: str) -> AssignmentResult | None:
+        """Kết quả worker đã gửi (đã lưu) của assignment; None nếu chưa có."""
+        async with await aconnect(self.dsn, autocommit=True) as conn:
+            cur = await conn.execute("SELECT result FROM assignment_results WHERE assignment_id=%s", (assignment_id,))
+            row = await cur.fetchone()
+        return AssignmentResult.model_validate(row["result"]) if row else None
+
+    async def uncompleted(self, grace_s: float = 15.0, limit: int = 100) -> list[tuple[str, str, bytes]]:
+        """Assignment đã kết thúc (COMPLETED/FAILED/CANCELLED) nhưng activity chưa được hoàn thành (post_result/completer lỗi,
+        sweep lỗi...). Trả (assignment_id, status, task_token). ``grace_s`` tránh đua với đường hoàn thành đang chạy."""
+        async with await aconnect(self.dsn, autocommit=True) as conn:
+            cur = await conn.execute(
+                """SELECT assignment_id, status, task_token FROM assignments
+                   WHERE status IN ('COMPLETED','FAILED','CANCELLED') AND NOT activity_completed AND task_token IS NOT NULL
+                     AND finished_at < now() - make_interval(secs => %s)
+                   ORDER BY finished_at LIMIT %s""",
+                (grace_s, limit),
+            )
+            return [(r["assignment_id"], r["status"], bytes(r["task_token"])) for r in await cur.fetchall()]
+
     async def status(self, assignment_id: str) -> dict | None:
         async with await aconnect(self.dsn, autocommit=True) as conn:
             cur = await conn.execute(

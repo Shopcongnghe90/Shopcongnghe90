@@ -74,6 +74,7 @@ class Dispatcher:
     ) -> None:
         self.registry, self.queue, self.scheduler, self.store, self.config = registry, queue, scheduler, store, config
         self.completer = completer
+        self.stuck_grace_s = 15.0  # chỉ vớt assignment đã kết thúc quá ngần này giây mà activity chưa hoàn thành
 
     async def _decide(self, task: Task, node: TaskNode):
         workers = await self.registry.list()
@@ -127,10 +128,37 @@ class Dispatcher:
         exp = await self.queue.requeue_expired(now)
         for aid, token in exp.failed:
             if token and self.completer:
-                await self.completer.complete(token, cancelled_result(aid, None, "lease expired: quá số lần thử"))
-                await self.queue.mark_activity_completed(aid)
+                # status đã FAILED trong DB: completer lỗi thì vòng ``complete_stuck`` bên dưới sẽ thử lại, token không mất (R5)
+                try:
+                    await self.completer.complete(token, cancelled_result(aid, None, "lease expired: quá số lần thử"))
+                    await self.queue.mark_activity_completed(aid)
+                except Exception:  # noqa: BLE001
+                    log.exception("hoàn thành activity cho %s lỗi (sẽ thử lại)", aid)
         await self.reschedule_unassigned()
-        return {"offline": stale, "requeued": exp.requeued, "released": exp.released, "failed": [a for a, _ in exp.failed]}
+        stuck = await self.complete_stuck()
+        return {"offline": stale, "requeued": exp.requeued, "released": exp.released, "failed": [a for a, _ in exp.failed], "completed": stuck}
+
+    async def complete_stuck(self) -> list[str]:
+        """Hoàn thành activity cho assignment đã kết thúc mà worker/API/sweep không hoàn thành được (R5): đọc kết quả đã lưu
+        rồi dùng task_token đã lưu. Lặp lại an toàn (activity đã xong => completer nuốt NOT_FOUND)."""
+        if not self.completer:
+            return []
+        done: list[str] = []
+        for aid, status, token in await self.queue.uncompleted(self.stuck_grace_s):
+            try:
+                res = await self.queue.result_of(aid) if status == "COMPLETED" else None
+                full_fn = getattr(self.completer, "complete_assignment", None)
+                if res is not None and full_fn is not None:
+                    await full_fn(token, res)
+                elif res is not None:
+                    await self.completer.complete(token, res.result)
+                else:
+                    await self.completer.complete(token, cancelled_result(aid, None, f"assignment {status.lower()}"))
+                await self.queue.mark_activity_completed(aid)
+                done.append(aid)
+            except Exception:  # noqa: BLE001
+                log.exception("hoàn thành activity cho %s lỗi (sẽ thử lại)", aid)
+        return done
 
 
 class DispatchActivities:

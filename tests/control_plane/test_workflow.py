@@ -298,7 +298,7 @@ async def test_end_to_end_on_postgres_stores_with_trace_span_tree(temporal_env, 
     rig = await make_rig(models_cfg, policy_cfg, store=PgControlStore(pg_dsn), approvals=PgApprovalStore(pg_dsn), audit=PgAudit(pg_dsn),
                          spans=SpanRecorder([PgSpanExporter(pg_dsn)]))
     gw = EventGateway(rig.store, rig.deps.intent, rig.deps.risk)
-    res = await gw.ingest(Event(channel=Channel.WORKBENCH, text="Chạy migration database cho bảng đơn hàng", external_id="e2e-1", sender=ChannelIdentity(channel_user_id="op")))
+    res = await gw.ingest(Event(channel=Channel.WORKBENCH, text="Chạy migration database cho bảng đơn hàng", external_id="e2e-1", sender=ChannelIdentity(channel_user_id="op"), signature_verified=True, untrusted=False))
     assert not res.duplicate and res.task.family is TaskFamily.DATABASE
     async with Harness(temporal_env, rig) as h:
         handle = await h.start(res.task)

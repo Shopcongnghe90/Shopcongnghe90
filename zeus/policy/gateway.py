@@ -26,6 +26,7 @@ from zeus.contracts.models import (
     utcnow,
 )
 from zeus.policy.engine import DefaultPolicyEngine, effective_risk
+from zeus.policy.idempotency import IdempotencyStore, InMemoryIdempotency
 from zeus.policy.jsonschema import validate
 
 
@@ -92,12 +93,13 @@ class DefaultToolGateway:
         policy: DefaultPolicyEngine,
         approvals: Any,
         audit: AuditSink | None = None,
+        idempotency: IdempotencyStore | None = None,
     ) -> None:
         self.policy = policy
+        self.idempotency: IdempotencyStore = idempotency or InMemoryIdempotency()
         self.approvals = approvals
         self.audit: AuditSink = audit or InMemoryAudit()
         self._routes: dict[str, tuple[ToolProvider, ActionSpec]] = {}
-        self._idem: dict[str, ActionResult] = {}
         for p in providers:
             for s in p.specs():
                 if s.name in self._routes:
@@ -171,17 +173,31 @@ class DefaultToolGateway:
         if getattr(provider, "remote", False):
             raise PolicyDenied(f"{spec.name} là action của worker; phải dispatch qua AssignmentQueue")
         key = action.idempotency_key or (derive_idempotency_key(action) if spec.external else None)
-        if key and key in self._idem:
-            await self._audit(action, "tool.idempotent_replay", spec, {"key": key})
-            return self._idem[key]
+        if key:
+            state, prior = await self.idempotency.begin(action.tenant_id, key)
+            if state == "done" and prior is not None:
+                await self._audit(action, "tool.idempotent_replay", spec, {"key": key})
+                return prior
+            if state == "pending":
+                # lần trước đã chiếm khoá nhưng không có kết quả (process chết/timeout/đang chạy): không chạy lại hành động ngoài
+                await self._audit(action, "tool.idempotent_unknown", spec, {"key": key})
+                return ActionResult(
+                    action_id=action.action_id, ok=False, executed_by="control",
+                    error=f"không rõ kết quả lần thực thi trước (idempotency {key}); kiểm tra thủ công trước khi chạy lại",
+                )
+        timed_out = False
         try:
             result = await asyncio.wait_for(provider.execute(action, spec), timeout=spec.timeout_s)
         except asyncio.TimeoutError:
+            timed_out = True
             result = ActionResult(action_id=action.action_id, ok=False, error=f"timeout after {spec.timeout_s}s", executed_by="control")
         except Exception as exc:  # noqa: BLE001 - tool lỗi không được làm sập gateway
             result = ActionResult(action_id=action.action_id, ok=False, error=f"{type(exc).__name__}: {exc}", executed_by="control")
-        if key and result.ok:
-            self._idem[key] = result
+        if key:
+            if result.ok or timed_out:  # timeout: có thể đã có tác dụng => ghi nhận, KHÔNG cho chạy lại tự động
+                await self.idempotency.finish(action.tenant_id, key, result)
+            else:  # thất bại đã biết: nhả khoá để retry
+                await self.idempotency.release(action.tenant_id, key)
         await self._audit(action, "tool.executed" if result.ok else "tool.failed", spec, {"ok": result.ok, "rule_ids": decision.rule_ids, "key": key})
         return result
 

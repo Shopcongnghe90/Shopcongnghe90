@@ -72,6 +72,9 @@ async def _handle(request: Request, channel: Channel) -> dict[str, int]:
                 await ctx.dedupe.release(key)
             log.exception("ingest thất bại cho %s", channel.value)
             raise HTTPException(503, "ingest tạm thời lỗi") from None
+        confirm = getattr(ctx.dedupe, "confirm", None)
+        if key and confirm is not None:
+            await confirm(key)
         dupes += 1 if res.duplicate else 0
         accepted += 0 if res.duplicate else 1
     return {"accepted": accepted, "duplicates": dupes, "ignored": 0 if events else 1}

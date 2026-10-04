@@ -78,7 +78,15 @@ class TemporalWorkflowControl:
     async def signal_approval(self, task_id: str, decision: ApprovalDecision) -> None:
         from zeus.orchestration.client import signal_approval
 
-        await signal_approval(self.client, task_id, decision)
+        try:
+            await signal_approval(self.client, task_id, decision)
+        except Exception as exc:  # noqa: BLE001
+            from temporalio.service import RPCError
+
+            # workflow đã kết thúc giữa chừng: quyết định đã lưu, không còn ai chờ signal => không trả 500 (R11)
+            if isinstance(exc, RPCError) and "already completed" in str(exc).lower():
+                return
+            raise
 
     async def signal_cancel(self, task_id: str, reason: str) -> None:
         from zeus.orchestration.client import signal_cancel
@@ -101,6 +109,22 @@ class DecisionBody(ZeusModel):
     status: Literal[ApprovalStatus.APPROVED, ApprovalStatus.REJECTED]
     decided_by: str = Field(min_length=1, max_length=200)
     comment: str | None = Field(default=None, max_length=2000)
+
+
+_TERMINAL = (TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.CANCELLED, TaskStatus.ROLLED_BACK)
+
+
+async def task_finished_expire(store: ControlStore, approvals: Any, req: Any) -> bool:
+    """True nếu task của approval đã kết thúc (workflow không còn nhận signal). Approval còn PENDING được đánh dấu EXPIRED
+    ngay, để không ghi APPROVED rồi trả 500 vì signal vào workflow đã đóng."""
+    if not req.task_id:
+        return False
+    task = await store.get_task(req.tenant_id, req.task_id)
+    if task is None or task.status not in _TERMINAL:
+        return False
+    if req.status is ApprovalStatus.PENDING and hasattr(approvals, "expire"):
+        await approvals.expire(req.approval_id)
+    return True
 
 
 class CancelBody(ZeusModel):
@@ -147,6 +171,8 @@ async def ingest_event(
         res = await s.gateway.ingest(body.event, idempotency_key)
     except UnknownTenant as exc:
         raise HTTPException(400, f"tenant không tồn tại: {exc}") from exc
+    if res.duplicate and res.resume_task is not None:  # lần ingest trước tạo task nhưng workflow chưa start được (R3)
+        await s.workflows.start(res.resume_task, None)
     if res.duplicate or res.task is None:
         return EventIngestResponse(event_id=res.event.event_id, accepted=True, duplicate=True, task_id=res.task_id, workflow_id=res.task_id)
     wf_id = await s.workflows.start(res.task, None)
@@ -203,6 +229,8 @@ async def decide_approval(approval_id: str, body: DecisionBody, request: Request
     req = await s.approvals.get(approval_id)
     if req is None or req.tenant_id != tenant:
         raise HTTPException(404, "không thấy yêu cầu duyệt")
+    if await task_finished_expire(s.store, s.approvals, req):  # task đã kết thúc: duyệt không còn ý nghĩa (R11)
+        raise HTTPException(409, "task đã kết thúc; yêu cầu duyệt đã hết hạn")
     try:
         updated = await s.approvals.decide(ApprovalDecision(approval_id=approval_id, status=body.status, decided_by=body.decided_by, comment=body.comment))
     except ValueError as exc:

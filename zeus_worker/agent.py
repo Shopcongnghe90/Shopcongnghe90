@@ -133,7 +133,7 @@ class WorkerAgent:
             out = await self._execute(a)
             result = await self._upload(a, out, started)
             self.recent.append(out.ok)
-            await self.client.post_result(result)
+            await self._send(lambda: self.client.post_result(result), f"post_result {a.assignment_id}")
         except asyncio.CancelledError:
             if a.assignment_id not in self._cancel_requested:
                 raise  # tắt worker, không phải lệnh huỷ từ control
@@ -152,8 +152,13 @@ class WorkerAgent:
     async def _upload(self, a: TaskAssignment, out: ExecOutput, started) -> AssignmentResult:
         aid = a.assignment_id
         log_bytes = out.log.encode("utf-8")
-        log_art: ArtifactRef | None = await self.client.upload(aid, log_bytes, kind="log", name="execution.log", mime="text/plain")
-        arts = [await self.client.upload(aid, data, kind="artifact", name=n, mime=m) for n, data, m in out.artifacts]
+        log_art: ArtifactRef | None = await self._send(
+            lambda: self.client.upload(aid, log_bytes, kind="log", name="execution.log", mime="text/plain"), f"upload log {aid}"
+        )
+        arts = [
+            await self._send(lambda n=n, data=data, m=m: self.client.upload(aid, data, kind="artifact", name=n, mime=m), f"upload {n} {aid}")
+            for n, data, m in out.artifacts
+        ]
         evidence: list[EvidenceItem] = []
         for e in out.evidence:
             if e.ref is None and e.kind in _LOG_EVIDENCE:
@@ -168,6 +173,26 @@ class WorkerAgent:
             assignment_id=aid, worker_id=self.cfg.worker_id, result=result, log_ref=log_art.ref, artifacts=arts, evidence=evidence,
             finished_at=finished, metrics={"duration_s": (finished - started).total_seconds()},
         )
+
+    async def _send(self, fn, what: str):  # noqa: ANN001, ANN202
+        """Gửi lên Worker API có retry+backoff: kết quả KHÔNG được mất khi control/Temporal tạm lỗi (R5). 4xx (trừ 408/429) là
+        lỗi vĩnh viễn => không retry. Hết số lần => ném để _run ghi log; control có sweep hoàn thành từ DB nên không kẹt."""
+        delay = self.cfg.send_retry_base_s
+        for i in range(max(1, self.cfg.send_retries)):
+            try:
+                return await fn()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code < 500 and exc.response.status_code not in (408, 429):
+                    raise
+                err: Exception = exc
+            except httpx.HTTPError as exc:
+                err = exc
+            if i + 1 >= max(1, self.cfg.send_retries):
+                raise err
+            log.warning("%s lỗi: %s (thử lại sau %.1fs)", what, err, delay)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30.0)
+        raise AssertionError("unreachable")  # pragma: no cover
 
     # ------------------------------------------------------------------ main loop
     async def run_forever(self, stop: asyncio.Event) -> None:

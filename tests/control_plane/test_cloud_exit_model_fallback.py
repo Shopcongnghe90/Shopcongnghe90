@@ -92,7 +92,7 @@ async def test_taskworkflow_full_cycle_on_temporal_with_local_model_only(tempora
     rig = await make_rig(models_cfg, policy_cfg, broker=broker, judge_broker=broker)
     queue = f"{TASK_QUEUE_CONTROL}-cx-{uuid.uuid4().hex[:6]}"
     gw = EventGateway(rig.store, DefaultIntentEngine(broker), rig.deps.risk)
-    res = await gw.ingest(Event(channel=Channel.WORKBENCH, text="giúp mình cái này với", external_id="cx-2"))
+    res = await gw.ingest(Event(channel=Channel.WORKBENCH, text="giúp mình cái này với", external_id="cx-2", signature_verified=True, untrusted=False))
     async with build_worker(temporal_env.client, rig.deps, queue):
         fw = FakeWorkerLoop(temporal_env.client, rig).start()
         try:

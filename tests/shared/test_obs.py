@@ -95,3 +95,41 @@ async def test_trace_context_isolated_between_asyncio_tasks():
 
     await asyncio.gather(worker("a"), worker("b"))
     assert seen == {"a": "a", "b": "b"}
+
+
+async def test_sec1_httpx_url_with_bot_token_not_logged():
+    """SEC-1: token bot Zalo nằm trong URL; httpx ghi URL ở INFO -> không được lọt vào log JSON."""
+    import httpx
+
+    from zeus.channels.outbound import ChannelOutboundProvider
+    from zeus.channels.zalo_bot import ZaloBotAdapter
+    from zeus.contracts.models import Channel, TypedAction
+
+    buf = io.StringIO()
+    handler = configure_logging("INFO", stream=buf)
+    try:
+        http = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"result": {"message_id": "m1"}})))
+        prov = ChannelOutboundProvider(ZaloBotAdapter("s").outbound_specs(), {Channel.ZALO_BOT: lambda: "123456:SECRET-BOT-TOKEN"}, http)
+        spec = prov.specs()[0]
+        res = await prov.execute(TypedAction(name=spec.name, args={"to": "c1", "text": "hi"}), spec)
+        assert res.ok
+        assert "SECRET-BOT-TOKEN" not in buf.getvalue()
+    finally:
+        logging.getLogger().removeHandler(handler)
+
+
+def test_sec1_formatter_redacts_even_when_logger_level_is_info():
+    from zeus.obs.logging import redact_text
+
+    buf = io.StringIO()
+    handler = configure_logging("INFO", stream=buf)
+    try:
+        lg = logging.getLogger("other.lib")
+        lg.info("POST https://bot-api.zaloplatforms.com/bot1:TOP-SECRET/sendMessage 200")
+        lg.info("GET https://x/y?access_token=ABC123&a=1", extra={"url": "https://z/bot9:XYZ/getMe"})
+        out = buf.getvalue()
+        assert "TOP-SECRET" not in out and "ABC123" not in out and "XYZ" not in out
+        assert "bot-api.zaloplatforms.com/bot***/sendMessage" in out  # host không bị che nhầm
+        assert redact_text("Authorization: Bearer abc.def-123") == "Authorization: Bearer ***"
+    finally:
+        logging.getLogger().removeHandler(handler)

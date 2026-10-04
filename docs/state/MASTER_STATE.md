@@ -61,13 +61,13 @@ Không có test hay hạng mục Cloud Exit nào FAIL. Ghi nhận trung thực c
 
 ## 5. ACTIVE WORK
 
-Không có. Nhánh sạch sau commit tích hợp, chưa push.
+Review round 2 (SEC-1..5, R1..R11) đã sửa — ADR-021. Chưa push.
 
 ## 6. Tóm tắt workstream Phase 1 (thay cho REPORT.md bị chặn)
 
 | WS | Test của WS (lúc nộp) | Rủi ro còn mở chính |
 |---|---|---|
-| A | 142 passed (`tests/control_plane`), marker model_fallback 5, workflow 2 | idempotency cache action external in-memory; required_approvers > 1 chưa hỗ trợ; regex PII/nguy hiểm chưa đo precision; workflow cần `workflow.patched` khi đổi cấu trúc |
+| A | 142 passed (`tests/control_plane`), marker model_fallback 5, workflow 2 | idempotency action external đã bền (migration 102, ADR-021; PENDING không rõ kết quả => người vận hành xử lý); required_approvers > 1 bị TỪ CHỐI lúc nạp policy (chưa có đa người duyệt); regex PII/nguy hiểm chưa đo precision; workflow cần `workflow.patched` khi đổi cấu trúc |
 | B | 34 passed (`tests/brain_learning`), oracle eval 90 case pass_rate 1.0 | chưa pool kết nối; token ước lượng thô; conflict resolver phụ thuộc tag; retention chưa duyệt (G14) |
 | C | 66 passed (`tests/workers`) | lease hết hạn có thể chạy trùng (cần idempotency_key); LearnedScorer là stub; ZEUS_G1_DUYET chỉ kiểm có mặt |
 | D | 86 passed, 1 skipped live (`tests/workbench_channels`) | phiên cookie ký không thu hồi từng phiên; khoá đăng nhập theo IP trong bộ nhớ; định dạng Shopee/Zalo cần đối chiếu thật |
@@ -75,7 +75,7 @@ Không có. Nhánh sạch sau commit tích hợp, chưa push.
 ## 7. EXACT NEXT ACTION
 
 1. Người: đóng gate **G1/G2/G3** (số đo ERP 7 ngày, kế hoạch dry-run + rollback) rồi tạo VM `zeus-core` và chạy `docs/runbooks/SERVER_BOOTSTRAP.md` mục 2–10; ghi kết quả thật vào mục 2/4 file này.
-2. Phase 2 (code, có thể làm ngay trong repo): planner sinh tham số typed action từ Intent entities (url/domain/order_id) để bật `http.check`/`file.checksum` trong playbook; bảng bền cho idempotency action external (migration 102); pool kết nối Postgres; index pgvector; Temporal Server + Postgres persistence; `ModelRequest` có risk/complexity (CCR A-3).
+2. Phase 2 (code, có thể làm ngay trong repo): planner sinh tham số typed action từ Intent entities (url/domain/order_id) để bật `http.check`/`file.checksum` trong playbook; pool kết nối Postgres; index pgvector; Temporal Server + Postgres persistence; `ModelRequest` có risk/complexity (CCR A-3).
 3. Kênh: đối chiếu Zalo Bot/OA, Messenger, Shopee với tài khoản thật trên staging (marker `live`), rồi mới bật `enabled`.
 4. Gate **G12** (API key + trần chi tiêu) trước khi bật cloud LLM; G14 trước khi bật retention.
 
@@ -87,4 +87,4 @@ G1 cài Incus/nftables trên host ERP · G2 số đo RAM/CPU ERP · G3 CPU ES2 �
 ## 9. Interfaces
 
 Contracts v1.1.0 = v1.0.0 + `EvidenceStore.get(record_id, tenant_id=None)`, `OutcomeRecorder.stats(task_family=None, tenant_id=None)`.
-Danh sách enum/model/Protocol/API/DB như v1.0.0 (xem `zeus/contracts`, ADR-009..019). Migrations: 000 shared, 101 A, 201–202 B, 301 C, 401 D.
+Danh sách enum/model/Protocol/API/DB như v1.0.0 (xem `zeus/contracts`, ADR-009..019). Migrations: 000 shared, 101–102 A, 201–202 B, 301 C, 401 D. `Task.untrusted` (ADR-021, cộng thêm).
