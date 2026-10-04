@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# thu-vien.sh — hàm dùng chung cho các script trong infra/may-ao.
+# thu-vien.sh — hàm dùng chung cho các script trong infra/may-ao (thin worker, 8 instance).
 # Được `source` bởi kiem-tra.sh, cai-incus.sh, tao-may.sh, snapshot.sh ...
 # Không chạy trực tiếp.
 
@@ -84,11 +84,76 @@ nap_bien_moi_truong() {
     thong_bao "không có $tep — dùng giá trị mặc định (xem bien-moi-truong.mau.env)"
   fi
   : "${KICH_CO_POOL:=600GiB}"
-  : "${ZFS_ARC_MAX:=6442450944}"
-  : "${THU_MUC_ISO:=/var/lib/may-ao/iso}"
-  : "${WIN_ISO:=$THU_MUC_ISO/Win11.iso}"
-  : "${MANG_AGENT:=10.90.10.0/24}"
-  : "${MANG_ERP:=10.90.20.0/24}"
+  : "${ZFS_ARC_MAX:=4294967296}"   # 4 GiB (kiến trúc mục 4)
+  : "${THU_MUC_BI_MAT:=$THU_MUC_GOC/bi-mat}"
+  : "${ZEUS_SERVER_URL:=http://10.90.30.10:8080}"
+  : "${RAM_TOI_THIEU_ERP_GIB:=20}"  # RAM còn trống tối thiểu để dám động vào host đang chạy ERP production
+}
+
+# ---------- Cổng rủi ro host (ADR-012 / gate G1) --------------------------------
+# ERP production chạy trên CHÍNH host này. Mọi thay đổi host (gói, sysctl, nftables, Incus, VM, mạng)
+# là HIGH PRODUCTION RISK. Quy tắc: --chay-thu luôn an toàn; chạy thật cần ĐỦ 3 thứ:
+#   1. cờ  --xac-nhan-rui-ro-erp-production
+#   2. biến ZEUS_G1_DUYET=<mã quyết định G1 của người duyệt>
+#   3. preflight đạt (RAM còn trống, không quá tải) và (nếu có TTY) gõ lại 'dong-y-rui-ro'
+: "${RAM_TOI_THIEU_ERP_GIB:=20}"
+CO_RUI_RO="--xac-nhan-rui-ro-erp-production"
+XAC_NHAN_RUI_RO=0
+CON_LAI=()
+
+# doc_co_chung "$@" : tiêu thụ các cờ đứng đầu (--chay-thu, --xac-nhan-rui-ro-erp-production); phần còn lại → CON_LAI.
+doc_co_chung() {
+  CON_LAI=()
+  local dang_dau=1 a
+  for a in "$@"; do
+    if [[ $dang_dau == 1 ]]; then
+      case "$a" in
+        --chay-thu) CHAY_THU=1; continue ;;
+        "$CO_RUI_RO") XAC_NHAN_RUI_RO=1; continue ;;
+      esac
+    fi
+    dang_dau=0; CON_LAI+=("$a")
+  done
+}
+
+# phat_hien_erp_production : CHỈ ĐỌC. Đặt ERP_PROD_PHAT_HIEN=1 nếu thấy dấu hiệu Odoo/PostgreSQL đang chạy trên host.
+phat_hien_erp_production() {
+  ERP_PROD_PHAT_HIEN=0; ERP_PROD_DAU_HIEU=()
+  local u
+  for u in odoo odoo-server postgresql; do
+    if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "$u" 2>/dev/null; then ERP_PROD_DAU_HIEU+=("dịch vụ $u đang chạy"); fi
+  done
+  if command -v ss >/dev/null 2>&1; then
+    if ss -ltn 2>/dev/null | grep -qE ':(8069|8072)[[:space:]]'; then ERP_PROD_DAU_HIEU+=("có tiến trình nghe cổng 8069/8072 (Odoo)"); fi
+    if ss -ltn 2>/dev/null | grep -qE ':5432[[:space:]]'; then ERP_PROD_DAU_HIEU+=("có PostgreSQL nghe cổng 5432"); fi
+  fi
+  if (( ${#ERP_PROD_DAU_HIEU[@]} > 0 )); then ERP_PROD_PHAT_HIEN=1; fi
+  return 0
+}
+
+ram_trong_gib() { awk '/^MemAvailable:/ {printf "%d", $2/1048576}' /proc/meminfo 2>/dev/null || echo 0; }
+
+# bao_ve_host_that "<mô tả thay đổi>" : gọi TRƯỚC mọi bước làm thay đổi host.
+bao_ve_host_that() {
+  local mo_ta="$1" ram tai
+  tieu_de "Preflight host (ERP production chạy trên host này — ADR-012)"
+  phat_hien_erp_production
+  ram="$(ram_trong_gib)"; tai="$(cut -d' ' -f1 /proc/loadavg 2>/dev/null || echo '?')"
+  if (( ERP_PROD_PHAT_HIEN )); then canh_bao "Phát hiện ERP production trên host: $(printf '%s; ' "${ERP_PROD_DAU_HIEU[@]}")"
+  else thong_bao "Không thấy dấu hiệu ERP production trên host (kiểm tra thủ công vẫn cần)."; fi
+  thong_bao "RAM còn trống: ${ram} GiB (cần ≥ ${RAM_TOI_THIEU_ERP_GIB}) | tải 1 phút: ${tai} | thay đổi sắp làm: ${mo_ta}"
+  if [[ "$CHAY_THU" == "1" ]]; then
+    canh_bao "[CHẠY THỬ] Bước này THAY ĐỔI HOST. Khi chạy thật cần: $CO_RUI_RO + ZEUS_G1_DUYET=<mã duyệt G1>."
+    return 0
+  fi
+  [[ "$XAC_NHAN_RUI_RO" == "1" ]] || chet "Từ chối: thiếu cờ $CO_RUI_RO (thay đổi host đang chạy ERP production). Xem --chay-thu trước."
+  [[ -n "${ZEUS_G1_DUYET:-}" ]] || chet "Từ chối: thiếu ZEUS_G1_DUYET=<mã quyết định G1/G2/G3> (người duyệt) — ADR-012."
+  (( ram >= RAM_TOI_THIEU_ERP_GIB )) || chet "Từ chối: RAM còn trống ${ram} GiB < ${RAM_TOI_THIEU_ERP_GIB} GiB — có thể ảnh hưởng ERP production."
+  if [[ -t 0 ]]; then
+    local xn; read -r -p "Gõ 'dong-y-rui-ro' để tiếp tục thay đổi host: " xn
+    [[ "$xn" == "dong-y-rui-ro" ]] || chet "Huỷ."
+  fi
+  thong_bao "Đã xác nhận rủi ro (duyệt: ${ZEUS_G1_DUYET})."
 }
 
 # ---------- Nhận diện nhân P/E ---------------------------------------------------
@@ -143,19 +208,21 @@ incus_san_sang() {
   incus info >/dev/null 2>&1
 }
 
-# Danh sách 7 máy & loại. Giữ đồng bộ với may/*.yaml và vai-tro/*.md
+# 8 instance mục tiêu (kiến trúc mục 4). Loại: core (VM zeus-core) | gpu (container) | edge (container) | worker (VM thin worker) | erp (VM staging).
+# w-gui-win (Windows GUI fallback) TẮT mặc định, ngoài luồng tự động (gate G8) — xem luu-tru/windows-gui-g8.
 # shellcheck disable=SC2034
 declare -A LOAI_MAY=(
-  [zalo-1]=windows
-  [zalo-2]=windows
-  [tim-hang]=linux
-  [facebook]=linux
-  [ban-hang]=linux
-  [he-thong]=linux
-  [erp-thu-nghiem]=erp
+  [zeus-core]=core
+  [zeus-gpu]=gpu
+  [zeus-edge]=edge
+  [w-code-1]=worker
+  [w-code-2]=worker
+  [w-browser]=worker
+  [w-ops]=worker
+  [erp-staging]=erp
 )
 # shellcheck disable=SC2034
-THU_TU_MAY=(zalo-1 zalo-2 tim-hang facebook ban-hang he-thong erp-thu-nghiem)
+THU_TU_MAY=(zeus-core zeus-gpu zeus-edge w-code-1 w-code-2 w-browser w-ops erp-staging)
 
 # Đọc địa chỉ IP tĩnh khai báo trong may/<ten>.yaml (dòng ipv4.address)
 ip_cua_may() {

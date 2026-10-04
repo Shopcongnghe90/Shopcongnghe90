@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# snapshot.sh — Quản lý snapshot cho 7 máy ảo.
+# snapshot.sh — Quản lý snapshot cho 8 instance.
 #
 # Snapshot ĐÊM đã được Incus tự chạy theo hồ sơ may-ao-chung:
 #   snapshots.schedule "0 2 * * *", tên dem-YYYY-MM-DD, hết hạn 7 ngày (ERP: 14 ngày).
@@ -12,14 +12,17 @@
 #   bash snapshot.sh don <may|tat-ca> <ngay>    # xoá snapshot TAY cũ hơn N ngày (snapshot đêm tự hết hạn)
 #   bash snapshot.sh xuat <may|tat-ca> [thu-muc] # xuất máy ra tarball (mặc định /var/lib/may-ao/xuat) — sao lưu ngoài host
 #   bash snapshot.sh lich                       # xem lịch snapshot hiện áp dụng cho từng máy
-#   Thêm --chay-thu trước lệnh để chỉ in ra.
+#   Thêm --chay-thu trước lệnh để chỉ in ra. Lệnh GHI (tao, khoi-phuc, xoa, don, xuat) đi qua cổng rủi ro ERP production:
+#   cần --xac-nhan-rui-ro-erp-production + ZEUS_G1_DUYET=<mã duyệt>. danh-sach và lich chỉ đọc.
 set -euo pipefail
 # shellcheck source=thu-vien.sh
 source "$(dirname "${BASH_SOURCE[0]}")/thu-vien.sh"
 
-[[ "${1:-}" == "--chay-thu" ]] && { CHAY_THU=1; shift; }
+doc_co_chung "$@"
+set -- "${CON_LAI[@]}"
 LENH="${1:-}"; shift || true
-[[ -n "$LENH" ]] || { sed -n '2,17p' "$0"; exit 1; }
+[[ -n "$LENH" ]] || { sed -n '2,18p' "$0"; exit 1; }
+case "$LENH" in danh-sach|lich) ;; *) bao_ve_host_that "snapshot.sh $LENH (ghi/xoá snapshot, dừng-bật instance)" ;; esac
 incus_san_sang || [[ $CHAY_THU == 1 ]] || chet "Không nối được Incus (chạy bằng user trong nhóm incus-admin)."
 
 # danh sách máy đang tồn tại trong Incus thuộc kế hoạch

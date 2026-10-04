@@ -1,7 +1,7 @@
-# Hồ sơ cho máy ERP thử nghiệm: mạng RIÊNG br-erp, đĩa 60 GiB, snapshot giữ 14 ngày.
-# cloud-init.user-data được tao-may.sh nạp từ anh-mau/erp/cloud-init-user-data.yaml
+# Hồ sơ cho erp-staging: mạng RIÊNG br-erp-test, đĩa 60 GiB, snapshot giữ 14 ngày.
+# cloud-init.user-data được tao-may.sh nạp từ anh-mau/erp/cloud-init-erp-staging.yaml
 name: erp
-description: "ERP thử nghiệm: Ubuntu 24.04 + Docker (Odoo mẫu), mạng br-erp cách ly"
+description: "erp-staging: Ubuntu 24.04 + Docker (Odoo 19 staging, dữ liệu đã làm sạch PII), mạng br-erp-test cách ly"
 config:
   security.secureboot: "true"
   # ERP có dữ liệu: giữ snapshot lâu hơn và vẫn snapshot cả khi máy tắt
@@ -10,7 +10,7 @@ config:
 devices:
   eth0:
     type: nic
-    network: br-erp
+    network: br-erp-test
     name: eth0
   root:
     type: disk

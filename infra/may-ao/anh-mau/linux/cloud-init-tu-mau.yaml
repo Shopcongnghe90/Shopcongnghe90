@@ -1,11 +1,9 @@
 #cloud-config
-# Cloud-init TỐI GIẢN cho máy tạo TỪ ẢNH MẪU agent-linux-mau (mọi thứ đã cài sẵn trong ảnh).
-# Nạp vào hồ sơ agent-linux-tu-mau bởi tao-may.sh thiet-lap.
-# - Không tạo user mới (agent đã có trong ảnh); Incus đặt hostname theo tên máy.
-# - Khoá SSH host, machine-id, mật khẩu VNC tạm đều được sinh lại ở lần khởi động đầu
-#   (ảnh mẫu đã xoá chúng trong tao-anh-mau.sh).
+# Cloud-init TỐI GIẢN cho máy tạo TỪ ẢNH MẪU zeus-worker-mau (mọi thứ đã cài sẵn trong ảnh).
+# Nạp vào hồ sơ zeus-worker-tu-mau bởi tao-may.sh thiet-lap.
+# Khoá SSH host, machine-id được sinh lại ở lần khởi động đầu (tao-anh-mau.sh đã xoá chúng).
 users: []
 timezone: Asia/Ho_Chi_Minh
 final_message: |
   Máy từ ảnh mẫu sẵn sàng sau $UPTIME giây.
-  Trên host: bash tao-may.sh bi-mat <ten-may>
+  Trên host: bash tao-may.sh dua-worker <ten-may>

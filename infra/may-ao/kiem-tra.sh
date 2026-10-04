@@ -4,8 +4,8 @@
 # Cách dùng:   bash infra/may-ao/kiem-tra.sh            (chạy bằng user thường được; sudo cho đầy đủ hơn)
 # Thoát mã 0 nếu không có mục LỖI, 1 nếu có.
 #
-# Mục tiêu phần cứng: Ubuntu 22.04/24.04, Intel i9-13900 (8P+16E = 32 luồng), 64 GB RAM,
-# ZFS cho pool Incus, 7 máy ảo ghim nhân E (16 nhân E → 2+2+2+2+2+2+4).
+# Mục tiêu phần cứng: Ubuntu 22.04/24.04, Intel i9-13900 ES2 (8P+16E = 32 luồng), 80 GB RAM, RTX 3060 12GB,
+# ZFS cho pool Incus, 8 instance (kiến trúc mục 4). ERP PRODUCTION chạy trên chính host này → kiểm tra chỉ đọc.
 set -uo pipefail
 # shellcheck source=thu-vien.sh
 source "$(dirname "${BASH_SOURCE[0]}")/thu-vien.sh"
@@ -82,7 +82,7 @@ thong_bao "Bảng topology (lscpu):"; lscpu -e=CPU,CORE,SOCKET,MAXMHZ 2>/dev/nul
 tieu_de "3. RAM"
 RAM_KB=$(awk '/MemTotal/{print $2}' /proc/meminfo); RAM_GB=$((RAM_KB/1024/1024))
 thong_bao "Tổng RAM: ${RAM_GB} GiB  |  Trống: $(awk '/MemAvailable/{printf "%d", $2/1024/1024}' /proc/meminfo) GiB"
-if (( RAM_GB >= 60 )); then d "≥60 GiB: đủ cho 48 GiB cấp máy ảo + 6 GiB ARC + host."; else l "RAM < 60 GiB: giảm limits.memory trong may/*.yaml và ZFS_ARC_MAX."; fi
+if (( RAM_GB >= 76 )); then d "≥76 GiB (host 80 GiB): đủ 51 GiB instance + 16 GiB dự phòng ERP production + 4 GiB ARC + overhead."; else l "RAM < 76 GiB: tính lại bảng RAM trong kiến trúc mục 4 (gate G2) trước khi tạo instance."; fi
 if [[ "$(cat /proc/sys/vm/swappiness 2>/dev/null)" ]]; then thong_bao "swappiness=$(cat /proc/sys/vm/swappiness); swap: $(free -h | awk '/Swap/{print $2}')"; fi
 
 # ------------------------------------------------------------------------------
@@ -117,7 +117,7 @@ if co_incus; then
     thong_bao "Pool: $(incus storage list -f csv -c n 2>/dev/null | tr '\n' ' ')"
     thong_bao "Mạng: $(incus network list -f csv -c n,t 2>/dev/null | grep -E 'bridge' | cut -d, -f1 | tr '\n' ' ')"
     thong_bao "Máy:  $(incus list -f csv -c n,s,t 2>/dev/null | tr '\n' ' ')"
-    for m in br-agent br-erp; do incus network show "$m" >/dev/null 2>&1 && d "Mạng $m đã có." || thong_bao "Mạng $m chưa có (tao-may.sh thiet-lap / cai-incus.sh sẽ tạo)."; done
+    for m in br-core br-agent br-ops br-erp-test br-dmz; do incus network show "$m" >/dev/null 2>&1 && d "Mạng $m đã có." || thong_bao "Mạng $m chưa có (tao-may.sh thiet-lap / cai-incus.sh sẽ tạo)."; done
     incus storage show may-ao >/dev/null 2>&1 && d "Pool may-ao đã có." || thong_bao "Pool may-ao chưa có."
   else
     cb "Có lệnh incus nhưng không nối được daemon (chưa init? user chưa trong incus-admin? → newgrp incus-admin)."
@@ -127,19 +127,18 @@ else
   thong_bao "Chưa cài Incus — đó là việc của cai-incus.sh."
 fi
 [[ -f /etc/apt/sources.list.d/zabbly-incus-stable.sources ]] && thong_bao "Kho Zabbly đã khai báo." || thong_bao "Kho Zabbly chưa khai báo."
-command -v snap >/dev/null && { snap list distrobuilder >/dev/null 2>&1 && thong_bao "distrobuilder (snap) đã cài — cần cho Windows." || thong_bao "distrobuilder chưa cài (anh-mau/windows/chuan-bi-iso.sh sẽ cài)."; }
-command -v swtpm >/dev/null && d "swtpm có — vTPM cho Windows 11." || thong_bao "swtpm chưa có (gói incus từ Zabbly kèm sẵn)."
+if command -v nvidia-smi >/dev/null 2>&1; then d "nvidia-smi có: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null | head -1)"; else cb "Chưa có nvidia-smi: zeus-gpu (nvidia.runtime) cần driver NVIDIA trên host; hệ thống vẫn chạy khi GPU vắng (cloud/queue)."; fi
 
 # ------------------------------------------------------------------------------
 tieu_de "6. Mạng & tường lửa"
 thong_bao "Giao diện mặc định: $(ip -o route show default 2>/dev/null | awk '{print $5" qua "$3}' | head -1)"
 thong_bao "Địa chỉ IP: $(ip -4 -o addr show scope global 2>/dev/null | awk '{print $2"="$4}' | tr '\n' ' ')"
 thong_bao "ip_forward=$(cat /proc/sys/net/ipv4/ip_forward) (Incus tự bật khi tạo bridge NAT)"
-for br in br-agent br-erp incusbr0; do ip link show "$br" >/dev/null 2>&1 && thong_bao "Bridge $br đang tồn tại."; done
+for br in br-core br-agent br-ops br-erp-test br-dmz incusbr0; do ip link show "$br" >/dev/null 2>&1 && thong_bao "Bridge $br đang tồn tại."; done
 if command -v nft >/dev/null; then
-  d "nftables có sẵn (Incus dùng nft; cach-ly-erp.nft cũng dùng nft)."
+  d "nftables có sẵn (Incus dùng nft; cach-ly-mang.nft cũng dùng nft)."
   if [[ $LA_ROOT == 1 ]]; then
-    nft list table inet may_ao_cach_ly >/dev/null 2>&1 && d "Bảng nft may_ao_cach_ly (cách ly ERP) đang nạp." || thong_bao "Bảng nft may_ao_cach_ly chưa nạp."
+    nft list table inet zeus_cach_ly >/dev/null 2>&1 && d "Bảng nft zeus_cach_ly (đa bridge) đang nạp." || thong_bao "Bảng nft zeus_cach_ly chưa nạp."
     nft list table inet incus >/dev/null 2>&1 && thong_bao "Bảng nft của Incus đang nạp."
   fi
 else
@@ -151,12 +150,27 @@ else
   thong_bao "ufw không bật (hoặc không cài)."
 fi
 if systemctl is-active --quiet docker 2>/dev/null; then cb "Docker đang chạy trên host: iptables của Docker có thể chặn forward từ bridge Incus (xem README)."; fi
-for mang in 10.90.10.0/24 10.90.20.0/24; do
+for mang in 10.90.10.0/24 10.90.20.0/24 10.90.30.0/24 10.90.40.0/24 10.90.50.0/24; do
   if ip -4 route show 2>/dev/null | grep -q "^${mang%/*}" ; then
     thong_bao "Route cho $mang đã có."
   fi
 done
 thong_bao "Kiểm tra DNS ra ngoài: $(getent hosts pkgs.zabbly.com >/dev/null 2>&1 && echo 'pkgs.zabbly.com giải được' || echo 'KHÔNG giải được pkgs.zabbly.com (cần internet để cài)')"
+
+# ------------------------------------------------------------------------------
+tieu_de "6b. ERP production trên host (CHỈ ĐỌC — nền cho gate G1/G2)"
+phat_hien_erp_production
+if (( ERP_PROD_PHAT_HIEN )); then
+  cb "Phát hiện ERP production: $(printf '%s; ' "${ERP_PROD_DAU_HIEU[@]}") → mọi thay đổi host cần $CO_RUI_RO + ZEUS_G1_DUYET."
+  thong_bao "Đo đỉnh RAM/CPU của ERP 7 ngày trước khi duyệt bảng RAM (gate G2): sar -r / sar -u (sysstat) hoặc Odoo/PG metrics."
+  thong_bao "Xác nhận phiên bản Odoo production (erp-staging dùng Odoo 19): $(odoo --version 2>/dev/null | head -1 || echo 'không đọc được')"
+else
+  thong_bao "Không thấy dấu hiệu ERP production — vẫn phải xác nhận thủ công trước khi chạy cai-incus.sh."
+fi
+thong_bao "RAM còn trống: $(ram_trong_gib) GiB (ngưỡng an toàn để thay đổi host: ${RAM_TOI_THIEU_ERP_GIB:-20} GiB)"
+if [[ -r /proc/cpuinfo ]]; then
+  thong_bao "Chữ ký CPU/microcode (gate G3 — CPU ES2, theo dõi MCE/WHEA): $(awk -F: '/^microcode/ {print $2; exit}' /proc/cpuinfo)"
+fi
 
 # ------------------------------------------------------------------------------
 tieu_de "7. Dịch vụ & linh tinh"

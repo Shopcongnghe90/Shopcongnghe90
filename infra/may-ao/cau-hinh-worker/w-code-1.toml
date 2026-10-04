@@ -1,0 +1,23 @@
+# Cấu hình thin worker cho w-code-1 -> /etc/zeus-worker/worker.toml (tao-may.sh dua-worker w-code-1).
+# Token riêng: bi-mat/w-code-1.token (admin phát hành trên zeus-core, KHÔNG commit) -> /etc/zeus-worker/token (0600).
+[server]
+url = "__ZEUS_SERVER_URL__"
+token_file = "/etc/zeus-worker/token"
+
+[worker]
+worker_id = "w-code-1"
+kind = "linux_vm"
+tenant_scope = ["zeusvn"]
+network_zone = "agent"
+capabilities = ["python", "git", "build", "odoo_addon_dev"]
+data_localities = ["repo:erp-addons"]
+max_concurrent = 2
+work_dir = "/var/lib/zeus-worker"
+
+[executors]
+http_allow_domains = []        # điền domain site cần kiểm tra (vd ".zeusvn.vn")
+file_roots = ["/var/lib/zeus-worker/work"]
+repo_roots = ["/var/lib/zeus-worker/work"]
+
+[executors.shell_allowlist]
+disk_usage = ["df", "-h", "/"]

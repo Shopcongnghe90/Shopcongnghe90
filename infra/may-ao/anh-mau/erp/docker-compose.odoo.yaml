@@ -1,4 +1,4 @@
-# docker-compose.odoo.yaml — ERP MẪU: Odoo 18 + PostgreSQL 16.
+# docker-compose.odoo.yaml — ERP MẪU: Odoo 19 + PostgreSQL 16 (staging; xác nhận major version khớp production).
 # tao-may.sh erp-odoo-mau đẩy tệp này vào /opt/erp/docker-compose.yaml trong máy ERP.
 # Mật khẩu đọc từ /opt/erp/.env (DB_MAT_KHAU, ODOO_ADMIN_MAT_KHAU) do cloud-init sinh.
 # Thay bằng ERP thật của shop nếu cần — máy & mạng cách ly không đổi.
@@ -19,11 +19,11 @@ services:
     restart: unless-stopped
 
   odoo:
-    image: odoo:18
+    image: odoo:${ODOO_TAG:-19.0}
     depends_on:
       db:
         condition: service_healthy
-    # Chỉ lắng nghe trong máy ERP; từ host/admin vào qua IP 10.90.20.11:8069 (tường lửa host đã chặn agent)
+    # Chỉ lắng nghe trong máy ERP; từ host/admin vào qua IP 10.90.20.11:8069 (nftables chỉ mở zeus-core và w-code-1/2)
     ports:
       - "8069:8069"
       - "8072:8072"

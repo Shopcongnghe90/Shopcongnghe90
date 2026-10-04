@@ -1,0 +1,98 @@
+#cloud-config
+# =============================================================================
+#  THIN WORKER — Ubuntu 24.04 (images:ubuntu/24.04/cloud, VM Incus)
+# =============================================================================
+#  Cài: Python venv, git, công cụ build, và dịch vụ systemd `zeus-worker`.
+#  KHÔNG cài LLM, KHÔNG cài Claude Code, KHÔNG có API key provider. Worker chỉ nói HTTP với
+#  zeus-core (Worker API /worker/v1/*) bằng token RIÊNG của nó và chỉ chạy executor có kiểu.
+#  KHÔNG chứa bí mật: token + worker.toml + mã nguồn zeus_worker do `tao-may.sh dua-worker <may>` đẩy vào sau.
+#  Tên máy do Incus đặt theo tên instance; cloud-init bật thêm gói trình duyệt nếu hostname = w-browser.
+# =============================================================================
+timezone: Asia/Ho_Chi_Minh
+locale: en_US.UTF-8
+
+package_update: true
+package_upgrade: true
+package_reboot_if_required: false
+
+apt:
+  conf: |
+    APT::Install-Recommends "false";
+    APT::Install-Suggests "false";
+
+users:
+  - name: zeus-worker
+    gecos: ZeusVN thin worker
+    system: true
+    shell: /usr/sbin/nologin
+    home: /var/lib/zeus-worker
+    lock_passwd: true
+  - name: admin
+    gecos: Quan tri
+    groups: [sudo, adm]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+
+ssh_pwauth: false
+
+swap:
+  filename: /swap.img
+  size: 2G
+  maxsize: 2G
+
+packages:
+  - python3
+  - python3-venv
+  - python3-pip
+  - git
+  - build-essential
+  - curl
+  - ca-certificates
+  - jq
+
+write_files:
+  - path: /etc/systemd/system/zeus-worker.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=ZeusVN thin worker (typed executors, không có LLM)
+      After=network-online.target
+      Wants=network-online.target
+      ConditionPathExists=/etc/zeus-worker/worker.toml
+
+      [Service]
+      Type=simple
+      User=zeus-worker
+      Group=zeus-worker
+      WorkingDirectory=/var/lib/zeus-worker
+      Environment=PYTHONPATH=/opt/zeus/src
+      ExecStart=/opt/zeus/venv/bin/python -m zeus_worker --config /etc/zeus-worker/worker.toml
+      Restart=always
+      RestartSec=5
+      NoNewPrivileges=true
+      ProtectSystem=strict
+      ProtectHome=true
+      PrivateTmp=true
+      ReadWritePaths=/var/lib/zeus-worker
+      CapabilityBoundingSet=
+      LockPersonality=true
+
+      [Install]
+      WantedBy=multi-user.target
+
+runcmd:
+  - [ bash, -c, "install -d -o zeus-worker -g zeus-worker -m 0750 /var/lib/zeus-worker /var/lib/zeus-worker/work" ]
+  - [ bash, -c, "install -d -o root -g zeus-worker -m 0750 /etc/zeus-worker" ]
+  - [ bash, -c, "install -d -m 0755 /opt/zeus/src" ]
+  # venv chỉ cần httpx + pydantic (zeus_worker không import Temporal SDK / SDK nhà cung cấp model)
+  - [ bash, -c, "python3 -m venv /opt/zeus/venv && /opt/zeus/venv/bin/pip install --quiet 'httpx>=0.27' 'pydantic>=2.6,<3'" ]
+  # w-browser: Chromium headless qua Playwright (người quan sát noVNC là tuỳ chọn, cài tay)
+  - [ bash, -c, "if [ \"$(hostname)\" = w-browser ]; then /opt/zeus/venv/bin/pip install --quiet playwright && /opt/zeus/venv/bin/python -m playwright install --with-deps chromium; fi" ]
+  - [ systemctl, daemon-reload ]
+  - [ bash, -c, "printf 'zeus-worker-vm %s\\n' \"$(date -u +%FT%TZ)\" > /etc/may-ao-anh-mau" ]
+  - [ apt-get, clean ]
+
+final_message: |
+  ===== Thin worker $HOSTNAME sẵn sàng sau $UPTIME giây (chưa có token/cấu hình) =====
+  Trên host: bash tao-may.sh dua-worker $HOSTNAME   (đẩy mã nguồn + worker.toml + token, bật dịch vụ)

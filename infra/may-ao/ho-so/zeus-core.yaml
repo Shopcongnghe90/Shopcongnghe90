@@ -1,0 +1,26 @@
+# Hồ sơ cho zeus-core (VM): Control API, Temporal, Postgres16+pgvector, Workbench, artifact store.
+# Việc cài ứng dụng control plane thuộc giai đoạn tích hợp (không nằm trong script hạ tầng này);
+# cloud-init chỉ dựng nền Python/Docker để integrator triển khai.
+name: zeus-core
+description: "zeus-core: Control API + Temporal + Postgres16/pgvector + Workbench (br-core 10.90.30.10)"
+config:
+  security.secureboot: "true"
+  cloud-init.user-data: |
+    #cloud-config
+    timezone: Asia/Ho_Chi_Minh
+    package_update: true
+    packages: [python3, python3-venv, python3-pip, git, curl, ca-certificates, jq]
+    ssh_pwauth: false
+devices:
+  eth0:
+    type: nic
+    network: br-core
+    name: eth0
+  root:
+    type: disk
+    pool: may-ao
+    path: /
+    size: 150GiB
+  agent:
+    type: disk
+    source: agent:config

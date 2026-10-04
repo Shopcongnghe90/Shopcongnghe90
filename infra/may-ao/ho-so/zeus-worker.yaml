@@ -1,0 +1,20 @@
+# Hồ sơ cho VM thin worker (w-code-1, w-code-2, w-browser, w-ops) và zeus-core.
+# cloud-init.user-data nạp bởi tao-may.sh thiet-lap từ anh-mau/linux/cloud-init-worker.yaml.
+# Máy KHÔNG có LLM, KHÔNG có API key; chỉ chạy zeus_worker (systemd) nói chuyện HTTP với zeus-core:8080.
+name: zeus-worker
+description: "VM thin worker: Ubuntu 24.04 + zeus_worker (systemd), không LLM, không Claude Code"
+config:
+  security.secureboot: "true"
+devices:
+  eth0:
+    type: nic
+    network: br-agent
+    name: eth0
+  root:
+    type: disk
+    pool: may-ao
+    path: /
+    size: 40GiB
+  agent:
+    type: disk
+    source: agent:config

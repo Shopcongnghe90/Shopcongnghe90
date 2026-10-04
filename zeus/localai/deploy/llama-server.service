@@ -1,0 +1,23 @@
+# Chạy TRONG container zeus-gpu (Incus, nvidia.runtime). Model: Qwen3.5-9B GGUF Q4_K_M (~5.5 GB VRAM).
+# Cài: cp vào /etc/systemd/system/, systemctl daemon-reload && systemctl enable --now llama-server
+# Model đặt ở /models (đĩa pool D, mount vào container); tải/kiểm checksum model là bước thủ công có ghi evidence.
+[Unit]
+Description=llama.cpp server - Qwen3.5-9B Q4_K_M (chat)
+After=network-online.target
+
+[Service]
+Type=simple
+User=llama
+ExecStart=/opt/llama.cpp/llama-server \
+  --model /models/Qwen3.5-9B-Q4_K_M.gguf \
+  --alias qwen3.5-9b-q4_k_m \
+  --host 10.90.30.20 --port 8080 \
+  --n-gpu-layers 99 --ctx-size 16384 --parallel 2 \
+  --threads 2 --jinja
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

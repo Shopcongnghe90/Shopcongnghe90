@@ -1,0 +1,24 @@
+[Unit]
+Description=ZeusVN thin worker (typed executors, không có LLM)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zeus-worker
+Group=zeus-worker
+WorkingDirectory=/var/lib/zeus-worker
+ExecStart=/opt/zeus/venv/bin/python -m zeus_worker --config /etc/zeus-worker/worker.toml
+Restart=always
+RestartSec=5
+# Hardening: worker không cần quyền đặc biệt
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/zeus-worker
+CapabilityBoundingSet=
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

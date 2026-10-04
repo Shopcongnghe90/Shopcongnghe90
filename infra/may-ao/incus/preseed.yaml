@@ -1,44 +1,43 @@
-# preseed.yaml — mẫu cho `incus admin init --preseed`.
-# cai-incus.sh sẽ thay dòng giữ chỗ dưới `config:` của pool bằng:
-#   source: /dev/nvme1n1     (đĩa riêng — khuyến nghị)   hoặc
-#   size: 600GiB             (tệp loop /var/lib/incus/disks/may-ao.img — chỉ để thử)
+# preseed.yaml — mẫu cho `incus admin init --preseed`. CHỈ chạy qua cai-incus.sh (cổng rủi ro host, gate G1/G2).
+# cai-incus.sh thay dòng giữ chỗ dưới `config:` của pool bằng:
+#   source: /dev/nvme1n1     (đĩa riêng — khuyến nghị; theo kiến trúc: pool trên ổ D)   hoặc
+#   size: 600GiB             (tệp loop — chỉ để thử)
 #
-# Ba điểm quan trọng của thiết kế:
+# Thiết kế:
 #   1. core.https_address để trống → API Incus chỉ qua unix socket, không phơi ra mạng.
-#   2. Hai bridge tách biệt: br-agent (6 máy agent) và br-erp (ERP thử nghiệm).
-#      Việc CHẶN qua lại giữa hai bridge do mang/cach-ly-erp.nft đảm nhiệm.
-#   3. Profile `default` chỉ có đĩa gốc, KHÔNG có card mạng → máy nào tạo nhầm
-#      bằng profile default sẽ không có mạng, tránh "rò" ra ngoài kế hoạch.
+#   2. Năm bridge tách biệt (br-core, br-agent, br-ops, br-erp-test, br-dmz). Việc CHẶN/MỞ giữa các bridge
+#      do mang/cach-ly-mang.nft đảm nhiệm.
+#   3. Profile `default` chỉ có đĩa gốc, KHÔNG có card mạng → instance tạo nhầm sẽ không có mạng.
 config:
   core.https_address: ""
   images.auto_update_interval: "24"
 
 networks:
+  - name: br-core
+    type: bridge
+    description: "zeus-core, zeus-gpu (+ eth1 của zeus-edge)"
+    config: {ipv4.address: 10.90.30.1/24, ipv4.nat: "true", ipv4.dhcp: "true", ipv4.dhcp.ranges: "10.90.30.100-10.90.30.199", ipv6.address: none, dns.domain: core.zeus}
   - name: br-agent
     type: bridge
-    description: "Mạng 6 máy agent (Zalo x2, tìm hàng, Facebook, bán hàng, hệ thống)"
-    config:
-      ipv4.address: 10.90.10.1/24
-      ipv4.nat: "true"
-      ipv4.dhcp: "true"
-      ipv4.dhcp.ranges: 10.90.10.100-10.90.10.199
-      ipv6.address: none
-      dns.domain: agent.may-ao
-  - name: br-erp
+    description: "Thin worker: w-code-1/2, w-browser"
+    config: {ipv4.address: 10.90.10.1/24, ipv4.nat: "true", ipv4.dhcp: "true", ipv4.dhcp.ranges: "10.90.10.100-10.90.10.199", ipv6.address: none, dns.domain: agent.zeus}
+  - name: br-ops
     type: bridge
-    description: "Mạng riêng cho ERP thử nghiệm — cách ly khỏi agent bằng nftables"
-    config:
-      ipv4.address: 10.90.20.1/24
-      ipv4.nat: "true"
-      ipv4.dhcp: "true"
-      ipv4.dhcp.ranges: 10.90.20.100-10.90.20.199
-      ipv6.address: none
-      dns.domain: erp.may-ao
+    description: "w-ops (Server Engineer lane)"
+    config: {ipv4.address: 10.90.40.1/24, ipv4.nat: "true", ipv4.dhcp: "true", ipv4.dhcp.ranges: "10.90.40.100-10.90.40.199", ipv6.address: none, dns.domain: ops.zeus}
+  - name: br-erp-test
+    type: bridge
+    description: "erp-staging (Odoo 19 staging, dữ liệu đã làm sạch)"
+    config: {ipv4.address: 10.90.20.1/24, ipv4.nat: "true", ipv4.dhcp: "true", ipv4.dhcp.ranges: "10.90.20.100-10.90.20.199", ipv6.address: none, dns.domain: erptest.zeus}
+  - name: br-dmz
+    type: bridge
+    description: "zeus-edge ingress (chỉ /hooks/*)"
+    config: {ipv4.address: 10.90.50.1/24, ipv4.nat: "true", ipv4.dhcp: "true", ipv4.dhcp.ranges: "10.90.50.100-10.90.50.199", ipv6.address: none, dns.domain: dmz.zeus}
 
 storage_pools:
   - name: may-ao
     driver: zfs
-    description: "Pool ZFS cho 7 máy ảo + snapshot đêm"
+    description: "Pool ZFS (ổ D) cho 8 instance + snapshot đêm"
     config:
       __NGUON_POOL__
 
