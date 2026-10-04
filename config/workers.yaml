@@ -1,0 +1,30 @@
+# Cấu hình Worker Registry / Scheduler / AssignmentQueue (owner C).
+heartbeat_interval_s: 15
+poll_wait_s: 20
+stale_ttl_s: 60            # quá TTL không heartbeat => OFFLINE
+lease_ttl_s: 60            # lease assignment; heartbeat của worker gia hạn
+max_attempts: 3            # quá số lần lease hết hạn => FAILED
+artifact_max_bytes: 52428800
+
+scheduler:
+  policy_version: deterministic-1
+  # Trọng số tuyến tính trên 10 yếu tố đã chuẩn hoá [0,1]; risk/failure_penalty âm.
+  weights:
+    capability_match: 3.0
+    worker_health: 2.0
+    cpu_available: 1.0
+    ram_available: 1.0
+    queue_load: 1.0
+    historical_success: 2.0
+    data_locality: 1.0
+    urgency: 0.5
+    risk: -1.0
+    failure_penalty: -2.0
+  # Ràng buộc cứng theo network zone: family -> zone được phép. Không khai báo => default_zones.
+  default_zones: [core, agent, ops, erp_test]
+  zone_rules:
+    erp_bug: [agent, erp_test]
+    erp_feature: [agent, erp_test]
+    deployment: [ops, agent]
+    security: [ops]
+    visual_qa: [agent]

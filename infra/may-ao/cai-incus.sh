@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
 # cai-incus.sh — Cài Incus + KVM + ZFS + nftables trên Ubuntu, khởi tạo pool/mạng theo preseed.
 #
-#   sudo bash cai-incus.sh --chay-thu            # CHỈ IN lệnh sẽ chạy, không đổi gì (khuyến nghị chạy trước)
-#   sudo bash cai-incus.sh                       # cài thật
+#   sudo bash cai-incus.sh --chay-thu            # CHỈ IN lệnh sẽ chạy + preflight, không đổi gì (chạy trước)
+#   sudo ZEUS_G1_DUYET=<mã duyệt G1> bash cai-incus.sh --xac-nhan-rui-ro-erp-production   # cài thật
+#   (ERP production chạy trên host này: không có cờ + mã duyệt + preflight đạt thì script TỪ CHỐI — ADR-012)
 #   sudo bash cai-incus.sh --nguon ubuntu        # dùng gói incus của Ubuntu (6.0 LTS) thay kho Zabbly
 #   sudo bash cai-incus.sh --ui                  # cài thêm giao diện web incus-ui-canonical (chỉ bind 127.0.0.1)
 #
-# Biến từ bien-moi-truong.env: O_DIA_ZFS, KICH_CO_POOL, ZFS_ARC_MAX, NGUOI_DUNG_INCUS.
+# Biến từ bien-moi-truong.env: O_DIA_ZFS, KICH_CO_POOL, ZFS_ARC_MAX, NGUOI_DUNG_INCUS, ZEUS_G1_DUYET.
 # Idempotent ở mức hợp lý: chạy lại không phá pool/mạng đã có.
 set -euo pipefail
 # shellcheck source=thu-vien.sh
 source "$(dirname "${BASH_SOURCE[0]}")/thu-vien.sh"
 
 NGUON=zabbly; CAI_UI=0
+doc_co_chung "$@"
+set -- "${CON_LAI[@]}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --chay-thu) CHAY_THU=1 ;;
     --nguon) NGUON="$2"; shift ;;
     --ui) CAI_UI=1 ;;
-    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
     *) chet "Tham số lạ: $1 (xem --help)" ;;
   esac; shift
 done
@@ -33,6 +35,8 @@ source /etc/os-release
 [[ "${ID:-}" == ubuntu ]] || chet "Script dành cho Ubuntu (phát hiện: ${PRETTY_NAME:-?})"
 case "${VERSION_ID:-}" in 22.04|24.04) ;; *) canh_bao "Ubuntu ${VERSION_ID} chưa kiểm chứng; tiếp tục với codename ${VERSION_CODENAME}";; esac
 NGUOI_DUNG_INCUS="${NGUOI_DUNG_INCUS:-${SUDO_USER:-}}"
+
+bao_ve_host_that "cài gói (incus, zfs, nftables), sysctl/limits/ZFS ARC, pool ZFS + 5 bridge, nftables đa bridge"
 
 # ---------------------------------------------------------------------------
 tieu_de "1/7 Gói nền: ZFS, nftables, công cụ"
@@ -86,7 +90,7 @@ if [[ -w /sys/module/zfs/parameters/zfs_arc_max ]] || [[ $CHAY_THU == 1 ]]; then
 else thong_bao "Module zfs chưa nạp — giới hạn ARC có hiệu lực sau reboot."; fi
 
 # ---------------------------------------------------------------------------
-tieu_de "4/7 Khởi tạo Incus (preseed: pool ZFS may-ao, br-agent, br-erp)"
+tieu_de "4/7 Khởi tạo Incus (preseed: pool ZFS may-ao + br-core/agent/ops/erp-test/dmz)"
 if [[ $CHAY_THU != 1 ]] && incus storage show may-ao >/dev/null 2>&1; then
   thong_bao "Pool may-ao đã tồn tại → bỏ qua preseed (dùng tao-may.sh thiet-lap để kiểm tra mạng/hồ sơ)."
 else
@@ -108,17 +112,17 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-tieu_de "5/7 Cách ly mạng ERP (nftables)"
-chay install -d -m 0755 /etc/may-ao
-chay install -m 0644 "$THU_MUC_GOC/mang/cach-ly-erp.nft" /etc/may-ao/cach-ly-erp.nft
-chay install -m 0644 "$THU_MUC_GOC/mang/may-ao-cach-ly.service" /etc/systemd/system/may-ao-cach-ly.service
-chay nft -c -f "$THU_MUC_GOC/mang/cach-ly-erp.nft"
+tieu_de "5/7 Cách ly mạng đa bridge (nftables)"
+chay install -d -m 0755 /etc/zeus
+chay install -m 0644 "$THU_MUC_GOC/mang/cach-ly-mang.nft" /etc/zeus/cach-ly-mang.nft
+chay install -m 0644 "$THU_MUC_GOC/mang/zeus-cach-ly.service" /etc/systemd/system/zeus-cach-ly.service
+chay nft -c -f "$THU_MUC_GOC/mang/cach-ly-mang.nft"   # kiểm cú pháp TRƯỚC khi nạp
 chay systemctl daemon-reload
-chay systemctl enable --now may-ao-cach-ly.service
+chay systemctl enable --now zeus-cach-ly.service
 
 # ---------------------------------------------------------------------------
-tieu_de "6/7 Thư mục ISO & bản sao kịch bản"
-chay install -d -m 0755 /var/lib/may-ao/iso /var/lib/may-ao/xuat
+tieu_de "6/7 Thư mục model GPU & xuất snapshot"
+chay install -d -m 0755 /var/lib/zeus/models /var/lib/may-ao/xuat
 if [[ $CAI_UI == 1 && "$NGUON" == zabbly ]]; then
   # UI chỉ nghe trên localhost; từ máy admin: ssh -L 8443:127.0.0.1:8443 <server> → https://localhost:8443
   chay incus config set core.https_address 127.0.0.1:8443
@@ -127,12 +131,12 @@ fi
 # ---------------------------------------------------------------------------
 tieu_de "7/7 Kiểm tra sau cài"
 if [[ $CHAY_THU == 1 ]]; then
-  thong_bao "(chạy thử) incus version; incus storage list; incus network list; nft list table inet may_ao_cach_ly"
+  thong_bao "(chạy thử) incus version; incus storage list; incus network list; nft list table inet zeus_cach_ly"
 else
   incus version || true
   incus storage list || true
   incus network list || true
-  nft list table inet may_ao_cach_ly >/dev/null 2>&1 && dat "Bảng cách ly ERP đã nạp." || canh_bao "Bảng cách ly chưa nạp — systemctl status may-ao-cach-ly"
+  nft list table inet zeus_cach_ly >/dev/null 2>&1 && dat "Bảng cách ly mạng đã nạp." || canh_bao "Bảng cách ly chưa nạp — systemctl status zeus-cach-ly"
 fi
 
 tieu_de "Xong"
@@ -142,7 +146,7 @@ Bước tiếp theo:
   2. bash $THU_MUC_GOC/tao-may.sh --chay-thu thiet-lap     # xem hồ sơ sẽ tạo
   3. bash $THU_MUC_GOC/tao-may.sh thiet-lap
   4. (tuỳ chọn) bash $THU_MUC_GOC/anh-mau/linux/tao-anh-mau.sh   # dựng ảnh mẫu Linux một lần
-  5. bash $THU_MUC_GOC/tao-may.sh tao linux && bash $THU_MUC_GOC/tao-may.sh tao erp-thu-nghiem
-  6. Windows: xem README mục 6
+  5. bash $THU_MUC_GOC/tao-may.sh tao tat-ca     # 8 instance; rồi: tao-may.sh dua-worker w-code-1 ...
+  6. Windows GUI (w-gui-win): TẮT mặc định, gate G8 — xem luu-tru/windows-gui-g8/
 Reboot host một lần để limits/ZFS ARC có hiệu lực đầy đủ (không bắt buộc ngay).
 HD

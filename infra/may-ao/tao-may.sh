@@ -1,46 +1,52 @@
 #!/usr/bin/env bash
-# tao-may.sh — Tạo & cấu hình 7 máy ảo theo kế hoạch (chạy trên HOST, user trong nhóm incus-admin).
+# tao-may.sh — Tạo & cấu hình 8 instance ZeusVN (chạy trên HOST, user trong nhóm incus-admin).
 #
-#   bash tao-may.sh [--chay-thu] <lệnh> [tham số]
+#   bash tao-may.sh [--chay-thu] [--xac-nhan-rui-ro-erp-production] <lệnh> [tham số]
 #
-#   thiet-lap                     kiểm tra pool/mạng; tạo-cập nhật 5 hồ sơ (may-ao-chung, agent-linux,
-#                                 agent-linux-tu-mau, agent-windows, erp); nạp cloud-init; kiểm tra nhân E
-#   tao <may>|linux|windows|erp|tat-ca
-#                                 tạo & bật máy. Linux/ERP: chờ cloud-init rồi tự đẩy bí mật nếu có token.
-#   bi-mat <may>|linux            đẩy token Claude + mật khẩu VNC + CLAUDE.md vai trò vào máy Linux; bật dịch vụ
-#   erp-odoo-mau                  đẩy compose Odoo mẫu vào máy ERP và khởi chạy
-#   trang-thai                    danh sách máy, IP, lệnh SSH tunnel (noVNC/RDP/ERP)
-#   nhat-ky <may>                 nhật ký dịch vụ claude-remote-control (tìm URL phiên)
-#   xoa <may>                     xoá máy (hỏi xác nhận)
+#   thiet-lap                     kiểm tra pool/5 bridge; tạo-cập nhật hồ sơ (may-ao-chung, zeus-worker,
+#                                 zeus-worker-tu-mau, zeus-core, zeus-gpu, erp); nạp cloud-init; kiểm tra ghim nhân
+#   tao <may>|core|worker|erp|tat-ca
+#                                 tạo & bật instance. Thin worker: sau đó chạy dua-worker để cài zeus_worker.
+#   dua-worker <may>|worker       đẩy mã nguồn zeus_worker + worker.toml + token RIÊNG vào VM thin worker, bật dịch vụ
+#   erp-odoo-mau                  đẩy compose Odoo 19 staging vào erp-staging và khởi chạy
+#   trang-thai                    danh sách instance, IP, lệnh SSH tunnel
+#   nhat-ky <may>                 nhật ký dịch vụ zeus-worker
+#   xoa <may>                     xoá instance (hỏi xác nhận)
 #
-#   Máy: zalo-1 zalo-2 (windows) | tim-hang facebook ban-hang he-thong (linux) | erp-thu-nghiem (erp)
-#   Bí mật đọc từ bien-moi-truong.env: CLAUDE_CODE_OAUTH_TOKEN, VNC_MAT_KHAU, THU_MUC_ISO.
+#   Instance: zeus-core | zeus-gpu zeus-edge | w-code-1 w-code-2 w-browser w-ops | erp-staging
+#   KHÔNG cài Claude Code / LLM / API key trên bất kỳ VM nào. Worker dùng token riêng: bi-mat/<may>.token (0600, gitignore).
+#   Lệnh làm thay đổi host (thiet-lap, tao, dua-worker, erp-odoo-mau, xoa) đi qua cổng rủi ro ERP production:
+#   cần --xac-nhan-rui-ro-erp-production + ZEUS_G1_DUYET=<mã duyệt>; --chay-thu luôn an toàn.
 set -euo pipefail
 # shellcheck source=thu-vien.sh
 source "$(dirname "${BASH_SOURCE[0]}")/thu-vien.sh"
 
-[[ "${1:-}" == "--chay-thu" ]] && { CHAY_THU=1; shift; }
+doc_co_chung "$@"
+set -- "${CON_LAI[@]}"
 LENH="${1:-}"; shift || true
-[[ -n "$LENH" ]] || { sed -n '2,19p' "$0"; exit 1; }
+[[ -n "$LENH" ]] || { sed -n '2,20p' "$0"; exit 1; }
 nap_bien_moi_truong
+case "$LENH" in trang-thai|nhat-ky) ;; *) bao_ve_host_that "lệnh tao-may.sh $LENH (incus: profile/instance/mạng)" ;; esac
 incus_san_sang || [[ $CHAY_THU == 1 ]] || chet "Không nối được Incus (newgrp incus-admin? đã chạy cai-incus.sh?)."
 
 ANH_UBUNTU="images:ubuntu/24.04/cloud"
-ALIAS_MAU="agent-linux-mau"
+ALIAS_MAU="zeus-worker-mau"
+GOC_REPO="$(cd "$THU_MUC_GOC/../.." && pwd)"
 
 # ---------------------------------------------------------------------------
-giai_danh_sach() { # linux|windows|erp|tat-ca|<may> → danh sách tên
+giai_danh_sach() { # core|worker|erp|tat-ca|<may> → danh sách tên
   local m
   case "$1" in
     tat-ca) printf '%s\n' "${THU_TU_MAY[@]}" ;;
-    linux|windows|erp) for m in "${THU_TU_MAY[@]}"; do [[ "${LOAI_MAY[$m]}" == "$1" ]] && echo "$m"; done ;;
-    *) [[ -n "${LOAI_MAY[$1]:-}" ]] || chet "Không có máy '$1' trong kế hoạch (xem đầu tệp)."; echo "$1" ;;
+    core|worker|erp|gpu|edge) for m in "${THU_TU_MAY[@]}"; do [[ "${LOAI_MAY[$m]}" == "$1" ]] && echo "$m"; done ;;
+    *) [[ -n "${LOAI_MAY[$1]:-}" ]] || chet "Không có instance '$1' trong kế hoạch (xem đầu tệp)."; echo "$1" ;;
   esac
 }
 may_ton_tai() { [[ $CHAY_THU == 1 ]] && return 1; incus info "$1" >/dev/null 2>&1; }
 
-kiem_tra_nhan_e() { # cảnh báo nếu CPU ghim của máy không phải nhân E trên host này
+kiem_tra_nhan_e() { # cảnh báo nếu CPU ghim của VM thin worker/core/erp không phải nhân E trên host này
   local m="$1" c cpu_list; cpu_list="$(cpu_cua_may "$m")"
+  case "${LOAI_MAY[$m]}" in gpu) thong_bao "$m: ghim $cpu_list (2 luồng P cho llama.cpp theo kiến trúc) — không kiểm tra nhân E."; return 0 ;; esac
   nhan_dien_nhan
   (( ${#NHAN_E[@]} >= 16 )) || { canh_bao "Host nhận diện ${#NHAN_E[@]} nhân E (<16) — bỏ qua kiểm tra ghim cho $m."; return 0; }
   for c in $(mo_khoang "$cpu_list"); do
@@ -52,17 +58,18 @@ kiem_tra_nhan_e() { # cảnh báo nếu CPU ghim của máy không phải nhân 
   thong_bao "$m: ghim $cpu_list — toàn nhân E ✔"
 }
 
-cho_san_sang() { # chờ incus-agent + cloud-init của máy Linux/ERP
-  local m="$1" i
+cho_san_sang() { # chờ incus-agent + cloud-init của VM
+  local m="$1"
   [[ $CHAY_THU == 1 ]] && { thong_bao "(chạy thử) chờ $m sẵn sàng"; return 0; }
+  case "${LOAI_MAY[$m]}" in gpu|edge) return 0 ;; esac
   thong_bao "Chờ incus-agent của $m (tối đa 5 phút)..."
-  for i in $(seq 1 60); do incus exec "$m" -- true >/dev/null 2>&1 && break; sleep 5; done
-  incus exec "$m" -- true >/dev/null 2>&1 || { canh_bao "$m: incus-agent chưa lên sau 5 phút (máy đang cài? xem: incus console $m)"; return 1; }
-  thong_bao "Chờ cloud-init của $m (lần đầu có thể 10-20 phút: apt upgrade, Chrome, Node, Claude)..."
+  for _ in $(seq 1 60); do incus exec "$m" -- true >/dev/null 2>&1 && break; sleep 5; done
+  incus exec "$m" -- true >/dev/null 2>&1 || { canh_bao "$m: incus-agent chưa lên sau 5 phút (xem: incus console $m)"; return 1; }
+  thong_bao "Chờ cloud-init của $m (lần đầu 5-15 phút)..."
   set +e; incus exec "$m" -- cloud-init status --wait >/dev/null 2>&1; local rc=$?; set -e
   case $rc in
     0) dat "$m: cloud-init hoàn tất." ;;
-    2) canh_bao "$m: cloud-init 'degraded' — một số bước lỗi. Xem: incus exec $m -- tail -50 /var/log/cloud-init-output.log" ;;
+    2) canh_bao "$m: cloud-init 'degraded'. Xem: incus exec $m -- tail -50 /var/log/cloud-init-output.log" ;;
     *) canh_bao "$m: cloud-init trả mã $rc." ;;
   esac
   return 0
@@ -74,38 +81,39 @@ thiet_lap() {
   if [[ $CHAY_THU != 1 ]]; then
     incus storage show may-ao >/dev/null 2>&1 || chet "Chưa có pool may-ao — chạy cai-incus.sh trước."
   fi
-  for net in br-agent br-erp; do
+  local net so
+  for net in br-core:30 br-agent:10 br-ops:40 br-erp-test:20 br-dmz:50; do
+    so="${net#*:}"; net="${net%:*}"
     if [[ $CHAY_THU != 1 ]] && incus network show "$net" >/dev/null 2>&1; then dat "Mạng $net có."; continue; fi
-    local so; so=$([[ $net == br-agent ]] && echo 10 || echo 20)
     chay incus network create "$net" ipv4.address=10.90.$so.1/24 ipv4.nat=true ipv4.dhcp=true \
       ipv4.dhcp.ranges=10.90.$so.100-10.90.$so.199 ipv6.address=none
   done
 
   tieu_de "Hồ sơ (profiles)"
   local p
-  for p in may-ao-chung agent-linux agent-windows erp; do
+  for p in may-ao-chung zeus-worker zeus-core zeus-gpu erp; do
     if [[ $CHAY_THU == 1 ]] || ! incus profile show "$p" >/dev/null 2>&1; then chay incus profile create "$p"; fi
     chay_sh "incus profile edit $p < '$THU_MUC_GOC/ho-so/$p.yaml'"
   done
-  # agent-linux-tu-mau: cùng thiết bị với agent-linux nhưng cloud-init tối giản (dùng với ảnh mẫu)
-  if [[ $CHAY_THU == 1 ]] || ! incus profile show agent-linux-tu-mau >/dev/null 2>&1; then chay incus profile create agent-linux-tu-mau; fi
-  chay_sh "sed -e 's/^name: agent-linux$/name: agent-linux-tu-mau/' -e 's/^description: .*/description: \"Agent Linux tạo từ ảnh mẫu agent-linux-mau (đã cài sẵn)\"/' '$THU_MUC_GOC/ho-so/agent-linux.yaml' | incus profile edit agent-linux-tu-mau"
+  # zeus-worker-tu-mau: cùng thiết bị với zeus-worker nhưng cloud-init tối giản (dùng với ảnh mẫu)
+  if [[ $CHAY_THU == 1 ]] || ! incus profile show zeus-worker-tu-mau >/dev/null 2>&1; then chay incus profile create zeus-worker-tu-mau; fi
+  chay_sh "sed -e 's/^name: zeus-worker$/name: zeus-worker-tu-mau/' -e 's/^description: .*/description: \"Thin worker tạo từ ảnh mẫu zeus-worker-mau\"/' '$THU_MUC_GOC/ho-so/zeus-worker.yaml' | incus profile edit zeus-worker-tu-mau"
 
   tieu_de "Nạp cloud-init vào hồ sơ"
   if [[ $CHAY_THU == 1 ]]; then
-    thong_bao "(chạy thử) incus profile set agent-linux cloud-init.user-data <anh-mau/linux/cloud-init-user-data.yaml>"
-    thong_bao "(chạy thử) incus profile set agent-linux-tu-mau cloud-init.user-data <anh-mau/linux/cloud-init-tu-mau.yaml>"
-    thong_bao "(chạy thử) incus profile set erp cloud-init.user-data <anh-mau/erp/cloud-init-user-data.yaml>"
+    thong_bao "(chạy thử) incus profile set zeus-worker cloud-init.user-data <anh-mau/linux/cloud-init-worker.yaml>"
+    thong_bao "(chạy thử) incus profile set zeus-worker-tu-mau cloud-init.user-data <anh-mau/linux/cloud-init-tu-mau.yaml>"
+    thong_bao "(chạy thử) incus profile set erp cloud-init.user-data <anh-mau/erp/cloud-init-erp-staging.yaml>"
   else
-    incus profile set agent-linux cloud-init.user-data "$(cat "$THU_MUC_GOC/anh-mau/linux/cloud-init-user-data.yaml")"
-    incus profile set agent-linux-tu-mau cloud-init.user-data "$(cat "$THU_MUC_GOC/anh-mau/linux/cloud-init-tu-mau.yaml")"
-    incus profile set erp cloud-init.user-data "$(cat "$THU_MUC_GOC/anh-mau/erp/cloud-init-user-data.yaml")"
+    incus profile set zeus-worker cloud-init.user-data "$(cat "$THU_MUC_GOC/anh-mau/linux/cloud-init-worker.yaml")"
+    incus profile set zeus-worker-tu-mau cloud-init.user-data "$(cat "$THU_MUC_GOC/anh-mau/linux/cloud-init-tu-mau.yaml")"
+    incus profile set erp cloud-init.user-data "$(cat "$THU_MUC_GOC/anh-mau/erp/cloud-init-erp-staging.yaml")"
     dat "Đã nạp cloud-init."
   fi
 
-  tieu_de "Kiểm tra ghim nhân E của 7 máy"
+  tieu_de "Kiểm tra ghim CPU của 8 instance"
   for m in "${THU_TU_MAY[@]}"; do kiem_tra_nhan_e "$m"; done
-  dat "Thiết lập xong. Tiếp: bash tao-may.sh tao linux   (hoặc anh-mau/linux/tao-anh-mau.sh trước)"
+  dat "Thiết lập xong. Tiếp: bash tao-may.sh tao tat-ca   rồi   bash tao-may.sh dua-worker worker"
 }
 
 # ---------------------------------------------------------------------------
@@ -114,93 +122,88 @@ tao_mot() {
   if may_ton_tai "$m"; then thong_bao "$m đã tồn tại — bỏ qua tạo."; return 0; fi
   kiem_tra_nhan_e "$m"
   case "$loai" in
-    linux)
-      anh="$ANH_UBUNTU"; hs="agent-linux"
+    worker)
+      anh="$ANH_UBUNTU"; hs="zeus-worker"
       if [[ $CHAY_THU != 1 ]] && incus image info "$ALIAS_MAU" >/dev/null 2>&1; then
-        anh="$ALIAS_MAU"; hs="agent-linux-tu-mau"; thong_bao "$m: dùng ảnh mẫu $ALIAS_MAU (nhanh)."
-      else thong_bao "$m: dùng $anh + cloud-init đầy đủ (10-20 phút)."; fi
+        anh="$ALIAS_MAU"; hs="zeus-worker-tu-mau"; thong_bao "$m: dùng ảnh mẫu $ALIAS_MAU (nhanh)."
+      else thong_bao "$m: dùng $anh + cloud-init đầy đủ (5-15 phút)."; fi
       chay_sh "incus init $anh $m --vm -p may-ao-chung -p $hs < '$THU_MUC_GOC/may/$m.yaml'"
+      chay incus start "$m" ;;
+    core)
+      chay_sh "incus init $ANH_UBUNTU $m --vm -p may-ao-chung -p zeus-core < '$THU_MUC_GOC/may/$m.yaml'"
       chay incus start "$m" ;;
     erp)
       chay_sh "incus init $ANH_UBUNTU $m --vm -p may-ao-chung -p erp < '$THU_MUC_GOC/may/$m.yaml'"
       chay incus start "$m" ;;
-    windows)
-      local iso_win="$THU_MUC_ISO/Win11.incus.iso" iso_au="$THU_MUC_ISO/autounattend-$m.iso"
-      [[ -f "$iso_win" || $CHAY_THU == 1 ]] || chet "Thiếu $iso_win — chạy anh-mau/windows/chuan-bi-iso.sh."
-      [[ -f "$iso_au"  || $CHAY_THU == 1 ]] || chet "Thiếu $iso_au — chạy anh-mau/windows/chuan-bi-iso.sh."
-      chay_sh "incus init $m --empty --vm -p may-ao-chung -p agent-windows < '$THU_MUC_GOC/may/$m.yaml'"
-      chay incus config device add "$m" install disk source="$iso_win" boot.priority=10
-      chay incus config device add "$m" unattend disk source="$iso_au"
-      chay incus config device add "$m" vtpm tpm path=/dev/tpm0
-      chay incus start "$m"
-      thong_bao "$m: Windows tự cài ~15-25 phút. Theo dõi: incus console $m --type=vga (cần remote-viewer) hoặc RDP sau khi xong."
-      thong_bao "$m: SAU KHI CÀI XONG, gỡ ISO: incus config device remove $m install unattend" ;;
+    gpu)
+      # Container (không --vm) với nvidia.runtime; cần driver NVIDIA + nvidia-container-toolkit trên host.
+      if [[ $CHAY_THU != 1 ]] && ! command -v nvidia-smi >/dev/null 2>&1; then
+        canh_bao "$m: host chưa có nvidia-smi — bỏ qua zeus-gpu (hệ thống vẫn chạy bằng cloud/queue). Cài driver rồi chạy lại."
+        return 0
+      fi
+      chay_sh "incus init images:ubuntu/24.04 $m -p may-ao-chung -p zeus-gpu < '$THU_MUC_GOC/may/$m.yaml'"
+      chay incus start "$m" ;;
+    edge)
+      chay_sh "incus init images:ubuntu/24.04 $m -p may-ao-chung < '$THU_MUC_GOC/may/$m.yaml'"
+      chay incus start "$m" ;;
   esac
 }
 
 tao() {
-  [[ -n "${1:-}" ]] || chet "Thiếu tham số: <may>|linux|windows|erp|tat-ca"
+  [[ -n "${1:-}" ]] || chet "Thiếu tham số: <may>|core|worker|erp|tat-ca"
   local ds m; mapfile -t ds < <(giai_danh_sach "$1")
-  tieu_de "Tạo ${#ds[@]} máy: ${ds[*]}"
+  tieu_de "Tạo ${#ds[@]} instance: ${ds[*]}"
   for m in "${ds[@]}"; do tao_mot "$m"; done
-  # Linux/ERP: chờ rồi đẩy bí mật
   for m in "${ds[@]}"; do
     case "${LOAI_MAY[$m]}" in
-      linux) if cho_san_sang "$m"; then
-               if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}${ANTHROPIC_API_KEY:-}" ]]; then bi_mat_mot "$m"; else canh_bao "Chưa có token trong bien-moi-truong.env → sau này: bash tao-may.sh bi-mat $m"; fi
-             fi ;;
-      erp)   if cho_san_sang "$m"; then thong_bao "ERP sẵn sàng. Odoo mẫu: bash tao-may.sh erp-odoo-mau"; fi ;;
+      worker) if cho_san_sang "$m"; then thong_bao "Tiếp: bash tao-may.sh dua-worker $m (cần bi-mat/$m.token)"; fi ;;
+      core|erp) cho_san_sang "$m" || true ;;
     esac
   done
   trang_thai
 }
 
 # ---------------------------------------------------------------------------
-bi_mat_mot() {
-  local m="$1"
-  [[ "${LOAI_MAY[$m]:-}" == linux ]] || chet "bi-mat chỉ dùng cho máy Linux (Windows: C:\\agent\\dat-token.ps1)."
-  tieu_de "Đẩy bí mật vào $m"
-  [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}${ANTHROPIC_API_KEY:-}" ]] || chet "Thiếu CLAUDE_CODE_OAUTH_TOKEN (hoặc ANTHROPIC_API_KEY) trong bien-moi-truong.env."
-  local tmp; tmp="$(mktemp)"; chmod 600 "$tmp"
-  {
-    echo "# sinh bởi tao-may.sh $(date -u +%FT%TZ)"
-    [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]] && echo "CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}"
-    [[ -n "${ANTHROPIC_API_KEY:-}" ]] && echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}"
-    echo "AGENT_TEN=$m"
-  } > "$tmp"
-  if [[ $CHAY_THU == 1 ]]; then thong_bao "(chạy thử) incus file push <env> $m/etc/claude-agent/env (0600 root)"
-  else incus file push --mode 0600 --uid 0 --gid 0 "$tmp" "$m/etc/claude-agent/env"; fi
-  rm -f "$tmp"
-
-  if [[ -n "${VNC_MAT_KHAU:-}" ]]; then
-    chay_kin "incus exec $m -- đặt mật khẩu VNC từ VNC_MAT_KHAU" \
-      incus exec --env VNC_MK="${VNC_MAT_KHAU}" "$m" -- bash -c 'printf %s "$VNC_MK" | vncpasswd -f > /home/agent/.vnc/passwd && chown agent:agent /home/agent/.vnc/passwd && chmod 600 /home/agent/.vnc/passwd'
-  else
-    canh_bao "VNC_MAT_KHAU trống → giữ mật khẩu tạm: incus exec $m -- cat /etc/claude-agent/vnc-tam"
+dua_worker_mot() {
+  local m="$1" tep_token="$THU_MUC_BI_MAT/$1.token" cfg="$THU_MUC_GOC/cau-hinh-worker/$1.toml" tgz
+  [[ "${LOAI_MAY[$m]:-}" == worker ]] || chet "dua-worker chỉ dùng cho VM thin worker (w-code-1/2, w-browser, w-ops)."
+  [[ -f "$cfg" ]] || chet "Thiếu $cfg"
+  tieu_de "Đưa zeus_worker vào $m"
+  if [[ $CHAY_THU != 1 ]]; then
+    [[ -f "$tep_token" ]] || chet "Thiếu token riêng $tep_token (admin phát hành trên zeus-core: PgWorkerRegistry.issue_token('$m')). Không dùng chung token giữa các worker."
+    [[ "$(stat -c %a "$tep_token")" == 600 ]] || chet "$tep_token phải có quyền 0600."
   fi
-
-  # CLAUDE.md = phần chung + vai trò riêng
-  tmp="$(mktemp)"; cat "$THU_MUC_GOC/vai-tro/_chung.md" <(echo) "$THU_MUC_GOC/vai-tro/$m.md" > "$tmp"
-  if [[ $CHAY_THU == 1 ]]; then thong_bao "(chạy thử) incus file push <CLAUDE.md vai trò $m> $m/home/agent/work/CLAUDE.md"
-  else incus file push --mode 0644 --uid 1000 --gid 1000 "$tmp" "$m/home/agent/work/CLAUDE.md"; fi
-  rm -f "$tmp"
-
+  tgz="$(mktemp)"
+  chay_sh "tar -C '$GOC_REPO' --exclude=__pycache__ -czf '$tgz' zeus/__init__.py zeus/contracts zeus_worker"
+  if [[ $CHAY_THU == 1 ]]; then
+    thong_bao "(chạy thử) incus file push <mã nguồn> $m/tmp/zeus-src.tgz; giải nén vào /opt/zeus/src"
+    thong_bao "(chạy thử) incus file push <worker.toml đã thay ZEUS_SERVER_URL=$ZEUS_SERVER_URL> $m/etc/zeus-worker/worker.toml (0640 root:zeus-worker)"
+    thong_bao "(chạy thử) incus file push <token> $m/etc/zeus-worker/token (0640 root:zeus-worker; giá trị không in ra)"
+  else
+    incus file push --mode 0644 --uid 0 --gid 0 "$tgz" "$m/tmp/zeus-src.tgz"
+    incus exec "$m" -- bash -c 'rm -rf /opt/zeus/src/* && tar -xzf /tmp/zeus-src.tgz -C /opt/zeus/src && rm -f /tmp/zeus-src.tgz'
+    local cfg_tmp; cfg_tmp="$(mktemp)"
+    sed "s|__ZEUS_SERVER_URL__|${ZEUS_SERVER_URL}|" "$cfg" > "$cfg_tmp"
+    incus file push --mode 0640 --uid 0 --gid 0 "$cfg_tmp" "$m/etc/zeus-worker/worker.toml"
+    incus file push --mode 0640 --uid 0 --gid 0 "$tep_token" "$m/etc/zeus-worker/token"
+    incus exec "$m" -- chgrp zeus-worker /etc/zeus-worker/worker.toml /etc/zeus-worker/token
+    rm -f "$cfg_tmp"
+  fi
+  rm -f "$tgz"
   chay incus exec "$m" -- systemctl daemon-reload
-  chay incus exec "$m" -- systemctl restart xvnc@1.service xfce@1.service novnc.service
-  chay incus exec "$m" -- systemctl enable --now claude-remote-control.service
-  dat "$m: xong. URL phiên remote-control: bash tao-may.sh nhat-ky $m"
+  chay incus exec "$m" -- systemctl enable --now zeus-worker.service
+  dat "$m: zeus-worker đã bật. Kiểm tra trên zeus-core: worker '$m' ONLINE sau ~15 giây. Nhật ký: bash tao-may.sh nhat-ky $m"
 }
-bi_mat() {
-  [[ -n "${1:-}" ]] || chet "Thiếu tham số: <may>|linux"
-  local ds; mapfile -t ds < <(giai_danh_sach "$1")
-  for m in "${ds[@]}"; do [[ "${LOAI_MAY[$m]}" == linux ]] && bi_mat_mot "$m"; done
+dua_worker() {
+  [[ -n "${1:-}" ]] || chet "Thiếu tham số: <may>|worker"
+  local m; for m in $(giai_danh_sach "$1"); do dua_worker_mot "$m"; done
 }
 
 # ---------------------------------------------------------------------------
 erp_odoo_mau() {
-  local m=erp-thu-nghiem
-  tieu_de "Odoo mẫu vào $m"
-  may_ton_tai "$m" || [[ $CHAY_THU == 1 ]] || chet "Chưa có máy $m (bash tao-may.sh tao erp)."
+  local m=erp-staging
+  tieu_de "Odoo 19 staging vào $m (dữ liệu phải là bản đã làm sạch PII)"
+  may_ton_tai "$m" || [[ $CHAY_THU == 1 ]] || chet "Chưa có $m (bash tao-may.sh tao erp)."
   cho_san_sang "$m" || true
   if [[ $CHAY_THU == 1 ]]; then
     thong_bao "(chạy thử) incus file push docker-compose.odoo.yaml $m/opt/erp/docker-compose.yaml; odoo.conf → /opt/erp/config/odoo.conf.mau"
@@ -208,11 +211,9 @@ erp_odoo_mau() {
     incus file push --mode 0640 --uid 1000 --gid 1000 "$THU_MUC_GOC/anh-mau/erp/docker-compose.odoo.yaml" "$m/opt/erp/docker-compose.yaml"
     incus file push --mode 0640 --uid 1000 --gid 1000 "$THU_MUC_GOC/anh-mau/erp/odoo.conf" "$m/opt/erp/config/odoo.conf.mau"
   fi
-  # thay mật khẩu từ /opt/erp/.env rồi khởi chạy
   chay incus exec "$m" -- bash -c 'set -e; cd /opt/erp; set -a; . ./.env; set +a; sed -e "s|__DB_MAT_KHAU__|$DB_MAT_KHAU|" -e "s|__ODOO_ADMIN_MAT_KHAU__|$ODOO_ADMIN_MAT_KHAU|" config/odoo.conf.mau > config/odoo.conf; chmod 640 config/odoo.conf; docker compose pull -q; docker compose up -d'
   local ip; ip="$(ip_cua_may "$m")"
   dat "Odoo đang khởi động (1-2 phút). Từ máy admin: ssh -L 8069:$ip:8069 <server> → http://localhost:8069"
-  thong_bao "Mật khẩu quản trị DB (admin_passwd): incus exec $m -- grep ODOO_ADMIN /opt/erp/.env"
 }
 
 # ---------------------------------------------------------------------------
@@ -220,23 +221,23 @@ trang_thai() {
   tieu_de "Trạng thái"
   if [[ $CHAY_THU == 1 ]]; then thong_bao "(chạy thử) incus list"; else incus list -c ns4mt 2>/dev/null || incus list; fi
   echo
-  printf '%s%-16s %-8s %-13s %-s%s\n' "$MAU_DAM" MAY LOAI IP "TRUY CẬP TỪ MÁY ADMIN (thay <server>)" "$MAU_HET"
-  local i=0 m ip
+  printf '%s%-12s %-8s %-13s %-s%s\n' "$MAU_DAM" INSTANCE LOAI IP "TRUY CẬP TỪ MÁY ADMIN (thay <server>)" "$MAU_HET"
+  local m ip
   for m in "${THU_TU_MAY[@]}"; do
-    i=$((i+1)); ip="$(ip_cua_may "$m")"
+    ip="$(ip_cua_may "$m")"
     case "${LOAI_MAY[$m]}" in
-      linux)   printf '%-16s %-8s %-13s ssh -L 608%d:%s:6080 <server>  → http://localhost:608%d/vnc.html\n' "$m" linux "$ip" "$i" "$ip" "$i" ;;
-      windows) printf '%-16s %-8s %-13s ssh -L 339%d:%s:3389 <server>  → mstsc /v:localhost:339%d (user agent)\n' "$m" windows "$ip" "$i" "$ip" "$i" ;;
-      erp)     printf '%-16s %-8s %-13s ssh -L 8069:%s:8069 <server>   → http://localhost:8069\n' "$m" erp "$ip" "$ip" ;;
+      core)   printf '%-12s %-8s %-13s ssh -L 8080:%s:8080 <server>   → Control API / Workbench\n' "$m" core "$ip" "$ip" ;;
+      gpu)    printf '%-12s %-8s %-13s llama.cpp http://%s:8080/v1 (chỉ từ br-core)\n' "$m" gpu "$ip" "$ip" ;;
+      edge)   printf '%-12s %-8s %-13s ingress /hooks/* (TLS) — chỉ tới zeus-core\n' "$m" edge "$ip" ;;
+      worker) printf '%-12s %-8s %-13s worker nói HTTP với zeus-core:8080/worker/v1/*\n' "$m" worker "$ip" ;;
+      erp)    printf '%-12s %-8s %-13s ssh -L 8069:%s:8069 <server>   → http://localhost:8069\n' "$m" erp "$ip" "$ip" ;;
     esac
   done
-  echo; thong_bao "Phiên Claude remote-control: bash tao-may.sh nhat-ky <may-linux>  (Windows: C:\\agent\\logs\\)"
 }
 
 nhat_ky() {
   [[ -n "${1:-}" ]] || chet "Thiếu tên máy."
-  chay incus exec "$1" -- journalctl -u claude-remote-control -n 40 --no-pager
-  [[ $CHAY_THU == 1 ]] || { echo; thong_bao "URL/mã phiên (nếu có):"; incus exec "$1" -- journalctl -u claude-remote-control --no-pager 2>/dev/null | grep -Eo 'https://[^ ]+' | tail -3 || true; }
+  chay incus exec "$1" -- journalctl -u zeus-worker -n 40 --no-pager
 }
 
 xoa() {
@@ -250,7 +251,7 @@ xoa() {
 case "$LENH" in
   thiet-lap)    thiet_lap ;;
   tao)          tao "${1:-}" ;;
-  bi-mat)       bi_mat "${1:-}" ;;
+  dua-worker)   dua_worker "${1:-}" ;;
   erp-odoo-mau) erp_odoo_mau ;;
   trang-thai)   trang_thai ;;
   nhat-ky)      nhat_ky "${1:-}" ;;

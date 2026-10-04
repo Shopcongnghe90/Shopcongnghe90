@@ -1,24 +1,33 @@
 #!/usr/bin/env bash
-# kiem-tra-cach-ly.sh — Xác minh ERP đã bị cách ly. Chạy trên HOST sau khi máy chạy.
-# Chỉ đọc + ping/curl thử từ trong máy (không đổi cấu hình).
+# kiem-tra-cach-ly.sh — Xác minh cách ly đa bridge. Chạy trên HOST SAU KHI các instance đã chạy (gate G1 đã duyệt).
+# Chỉ đọc + ping/curl thử từ trong máy (không đổi cấu hình). Không chạy mặc định trong CI.
 set -uo pipefail
 # shellcheck source=../thu-vien.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../thu-vien.sh"
 
-IP_ERP="$(ip_cua_may erp-thu-nghiem)"; IP_AGENT="$(ip_cua_may tim-hang)"
+IP_CORE="$(ip_cua_may zeus-core)"; IP_ERP="$(ip_cua_may erp-staging)"; IP_OPS="$(ip_cua_may w-ops)"
+
 tieu_de "Bảng nftables"
-if nft list table inet may_ao_cach_ly >/dev/null 2>&1; then dat "Bảng may_ao_cach_ly đang nạp."; nft list table inet may_ao_cach_ly | grep -E 'counter' | sed 's/^/   /'
-else loi "Bảng may_ao_cach_ly CHƯA nạp → systemctl start may-ao-cach-ly"; fi
+if nft list table inet zeus_cach_ly >/dev/null 2>&1; then dat "Bảng zeus_cach_ly đang nạp."; nft list table inet zeus_cach_ly | grep -E 'counter' | sed 's/^/   /'
+else loi "Bảng zeus_cach_ly CHƯA nạp → systemctl start zeus-cach-ly"; fi
 
-tieu_de "Thử từ agent (tim-hang) → ERP ($IP_ERP)"
-if incus exec tim-hang -- timeout 3 ping -c1 -W1 "$IP_ERP" >/dev/null 2>&1; then loi "Agent PING ĐƯỢC ERP — cách ly thất bại!"; else dat "Agent không ping được ERP (đúng)."; fi
-if incus exec tim-hang -- timeout 3 bash -c "curl -s -m2 http://$IP_ERP:8069 >/dev/null" 2>/dev/null; then loi "Agent mở được cổng 8069 của ERP — cách ly thất bại!"; else dat "Agent không mở được ERP:8069 (đúng)."; fi
-if incus exec tim-hang -- timeout 5 bash -c "curl -s -m4 -o /dev/null https://www.google.com" 2>/dev/null; then dat "Agent vẫn ra internet được."; else canh_bao "Agent không ra internet (DNS/NAT?)"; fi
+thu() { # thu <may-nguon> <đích> <cổng> <mong-doi: duoc|chan>
+  local from="$1" ip="$2" port="$3" mong="$4" ket="chan"
+  if incus exec "$from" -- timeout 4 bash -c "exec 3<>/dev/tcp/$ip/$port" >/dev/null 2>&1; then ket="duoc"; fi
+  if [[ "$ket" == "$mong" ]]; then dat "$from -> $ip:$port: $ket (đúng)"; else loi "$from -> $ip:$port: $ket nhưng mong đợi $mong"; fi
+}
 
-tieu_de "Thử từ ERP → agent ($IP_AGENT) và host"
-if incus exec erp-thu-nghiem -- timeout 3 ping -c1 -W1 "$IP_AGENT" >/dev/null 2>&1; then loi "ERP PING ĐƯỢC agent — cách ly thất bại!"; else dat "ERP không ping được agent (đúng)."; fi
-if incus exec erp-thu-nghiem -- timeout 3 bash -c "curl -s -m2 http://10.90.20.1:8443 >/dev/null" 2>/dev/null; then canh_bao "ERP mở được cổng 8443 trên host?"; else dat "ERP không chạm được dịch vụ host ngoài DHCP/DNS (đúng)."; fi
-if incus exec erp-thu-nghiem -- timeout 5 bash -c "curl -s -m4 -o /dev/null https://www.google.com" 2>/dev/null; then dat "ERP vẫn ra internet được."; else canh_bao "ERP không ra internet."; fi
+tieu_de "Kiểm tra danh sách trắng"
+thu w-code-1 "$IP_CORE" 8080 duoc
+thu w-code-1 "$IP_ERP" 8069 duoc
+thu w-browser "$IP_ERP" 8069 chan
+thu w-code-1 "$IP_OPS" 22 chan
+thu erp-staging "$(ip_cua_may w-code-1)" 22 chan
+thu w-ops "$IP_CORE" 8080 duoc
+thu w-ops "$IP_ERP" 8069 chan
+thu zeus-edge "$IP_CORE" 8080 duoc
+thu zeus-edge "$(ip_cua_may w-code-1)" 22 chan
 
-tieu_de "Từ host → ERP web"
-if curl -s -m3 -o /dev/null "http://$IP_ERP:8069"; then dat "Host mở được ERP:8069 (dùng SSH tunnel từ máy admin: ssh -L 8069:$IP_ERP:8069 <server>)"; else canh_bao "Host chưa mở được ERP:8069 (ERP chưa chạy?)"; fi
+tieu_de "Từ bridge -> host (ngoài DHCP/DNS phải bị chặn)"
+for m in w-code-1 w-ops erp-staging zeus-edge; do thu "$m" 10.90.30.1 22 chan; done
+thong_bao "ERP production: chỉ zeus-core -> host:8069 được mở (kiểm tra bằng zeus-core: curl http://<ip-host>:8069/web/health)."

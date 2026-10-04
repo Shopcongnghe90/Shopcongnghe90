@@ -1,0 +1,30 @@
+# Profile Incus cho container zeus-gpu (RTX 3060 12GB). CHỈ là tệp cấu hình — chưa áp dụng lên host (gate G1).
+# Điều kiện trên host: driver NVIDIA + nvidia-container-toolkit đã cài và `nvidia-smi` chạy được.
+# Áp dụng (sau khi duyệt): incus profile create zeus-gpu && incus profile edit zeus-gpu < incus-gpu-profile.yaml
+name: zeus-gpu
+description: "zeus-gpu: llama.cpp (Qwen3.5-9B Q4_K_M + embedding + OCR), nvidia.runtime, ghim 2 luồng P 14-15"
+config:
+  nvidia.runtime: "true"
+  nvidia.driver.capabilities: compute,utility
+  limits.cpu: "14-15"
+  limits.memory: 6GiB
+  security.nesting: "false"
+devices:
+  gpu:
+    type: gpu
+    gputype: physical
+    # pci: "0000:01:00.0"   # điền địa chỉ PCI thật từ `lspci | grep -i nvidia` nếu host có nhiều GPU
+  models:
+    type: disk
+    source: /var/lib/zeus/models        # pool D, chỉ đọc trong container
+    path: /models
+    readonly: "true"
+  root:
+    type: disk
+    pool: may-ao
+    path: /
+    size: 60GiB
+  eth0:
+    type: nic
+    network: br-core
+    ipv4.address: 10.90.30.20

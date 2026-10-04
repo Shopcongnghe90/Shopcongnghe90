@@ -1,0 +1,90 @@
+#cloud-config
+# =============================================================================
+#  erp-staging — Ubuntu 24.04 + Docker (mạng br-erp-test, cách ly)
+# =============================================================================
+#  Cloud-init này CHỈ cài Docker và tạo /opt/erp. ERP cụ thể (mẫu: Odoo 19) do
+#  tao-may.sh đẩy tệp docker-compose.odoo.yaml vào /opt/erp rồi `docker compose up -d`.
+#  Muốn dùng ERP khác: thay tệp compose, giữ nguyên máy.
+#  Không có Claude Code trên máy này (cố ý — ERP là đích được bảo vệ, không phải agent).
+# =============================================================================
+timezone: Asia/Ho_Chi_Minh
+locale: en_US.UTF-8
+package_update: true
+package_upgrade: true
+package_reboot_if_required: false
+
+users:
+  - name: erp
+    gecos: ERP admin
+    uid: "1000"
+    primary_group: erp
+    groups: [sudo, adm]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    lock_passwd: true
+
+ssh_pwauth: false
+
+swap:
+  filename: /swap.img
+  size: 2G
+  maxsize: 2G
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - git
+  - jq
+  - htop
+  - tmux
+  - unzip
+  - postgresql-client
+
+write_files:
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "20m", "max-file": "5" },
+        "live-restore": true
+      }
+  - path: /opt/erp/README.md
+    permissions: "0644"
+    content: |
+      # /opt/erp
+      - docker-compose.yaml : do tao-may.sh đẩy vào (mẫu Odoo 19 + PostgreSQL 16)
+      - .env                : mật khẩu DB sinh ngẫu nhiên lúc tạo máy (giữ kín)
+      - addons/, config/    : addon & cấu hình Odoo
+      Lệnh: cd /opt/erp && docker compose ps | logs -f | down | up -d
+      Sao lưu DB: docker compose exec db pg_dumpall -U odoo > /opt/erp/sao-luu/erp-$(date +%F).sql
+  - path: /etc/cron.daily/erp-sao-luu-db
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      # Dump DB mỗi ngày (ngoài snapshot đĩa của Incus) — giữ 7 bản
+      set -e
+      cd /opt/erp || exit 0
+      [ -f docker-compose.yaml ] || exit 0
+      mkdir -p sao-luu
+      docker compose exec -T db pg_dumpall -U odoo 2>/dev/null | gzip > "sao-luu/erp-$(date +%F).sql.gz" || exit 0
+      ls -1t sao-luu/erp-*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm -f
+
+runcmd:
+  # Docker CE từ kho chính thức
+  - [ bash, -c, "install -m 0755 -d /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && chmod a+r /etc/apt/keyrings/docker.asc" ]
+  - [ bash, -c, ". /etc/os-release && echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable\" > /etc/apt/sources.list.d/docker.list" ]
+  - [ bash, -c, "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin" ]
+  - [ usermod, -aG, docker, erp ]
+  - [ systemctl, enable, --now, docker ]
+  # Thư mục ERP + mật khẩu DB ngẫu nhiên (compose đọc từ .env)
+  - [ bash, -c, "install -d -o erp -g erp -m 0750 /opt/erp /opt/erp/addons /opt/erp/config /opt/erp/sao-luu" ]
+  - [ bash, -c, "[ -f /opt/erp/.env ] || { printf 'DB_MAT_KHAU=%s\\nODOO_ADMIN_MAT_KHAU=%s\\n' \"$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)\" \"$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)\" > /opt/erp/.env; chown erp:erp /opt/erp/.env; chmod 600 /opt/erp/.env; }" ]
+  - [ bash, -c, "printf 'may-erp %s\\n' \"$(date -u +%FT%TZ)\" > /etc/may-ao-anh-mau" ]
+  - [ apt-get, clean ]
+
+final_message: |
+  ===== Máy ERP thử nghiệm sẵn sàng sau $UPTIME giây (Docker đã cài) =====
+  Trên host: bash tao-may.sh erp-odoo-mau   → đẩy compose Odoo & khởi chạy
+  Mật khẩu: /opt/erp/.env trong máy (incus exec erp-staging -- cat /opt/erp/.env)

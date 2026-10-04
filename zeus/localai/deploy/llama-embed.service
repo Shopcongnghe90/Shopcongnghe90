@@ -1,0 +1,20 @@
+# Embedding server (OpenAI-compatible /v1/embeddings) trong container zeus-gpu. Model embedding GGUF nhỏ (~0.6 GB).
+[Unit]
+Description=llama.cpp server - embeddings
+After=network-online.target
+
+[Service]
+Type=simple
+User=llama
+ExecStart=/opt/llama.cpp/llama-server \
+  --model /models/embedding-Q8_0.gguf \
+  --alias embed \
+  --host 10.90.30.20 --port 8081 \
+  --embeddings --pooling mean \
+  --n-gpu-layers 99 --ctx-size 8192 --threads 1
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

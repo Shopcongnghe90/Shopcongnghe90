@@ -1,8 +1,8 @@
-# Hồ sơ (profile) dùng chung cho CẢ 7 máy ảo: tự khởi động, snapshot đêm.
+# Hồ sơ (profile) dùng chung cho CẢ 8 instance: tự khởi động, snapshot đêm.
 # Áp dụng: incus profile create may-ao-chung; incus profile edit may-ao-chung < ho-so/may-ao-chung.yaml
 # (tao-may.sh thiet-lap làm việc này.)
 name: may-ao-chung
-description: "Chung cho 7 máy ảo: tự khởi động + snapshot đêm 02:00, giữ 7 ngày"
+description: "Chung cho 8 instance: tự khởi động + snapshot đêm 02:00, giữ 7 ngày"
 config:
   # Tự bật khi host khởi động, giãn 10s để không dồn I/O
   boot.autostart: "true"

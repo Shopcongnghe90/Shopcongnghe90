@@ -1,0 +1,17 @@
+# may/w-code-1.yaml — VM thin worker. Dùng: tao-may.sh tao w-code-1 (bảng instance: docs/architecture mục 4).
+# Ghim: nhân E = CPU logic 16-31, P-thread 14-15 cho zeus-gpu; nhân P 0-13 dành cho host + ERP production.
+description: "w-code-1: git, build, test, Python/Node, Odoo addon dev"
+config:
+  limits.cpu: "20-23"
+  limits.memory: 8GiB
+devices:
+  eth0:
+    type: nic
+    network: br-agent
+    name: eth0
+    ipv4.address: 10.90.10.21
+  root:
+    type: disk
+    pool: may-ao
+    path: /
+    size: 80GiB

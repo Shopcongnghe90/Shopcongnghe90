@@ -1,0 +1,56 @@
+#!/usr/sbin/nft -f
+# cach-ly-mang.nft — Chính sách mạng ĐA BRIDGE cho 8 instance (kiến trúc mục 4). Gate G1: CHƯA áp dụng lên host.
+#
+#   br-core     10.90.30.0/24  zeus-core .10, zeus-gpu .20, zeus-edge(eth1) .30
+#   br-agent    10.90.10.0/24  w-code-1 .21, w-code-2 .22, w-browser .23
+#   br-ops      10.90.40.0/24  w-ops .10
+#   br-erp-test 10.90.20.0/24  erp-staging .11
+#   br-dmz      10.90.50.0/24  zeus-edge .10
+#
+# Nguyên tắc: bridge -> internet cho phép; bridge -> bridge khác CHỈ theo danh sách trắng dưới đây;
+# bridge -> HOST chỉ DHCP/DNS/ICMP. ERP PRODUCTION (chạy trên host) không mở cho bridge nào ngoài zeus-core:
+# zeus-core -> host:8069 (JSON-2, user bot quyền tối thiểu).
+#
+# Bảng riêng, priority filter-10 => xét TRƯỚC bảng `incus`. Nạp thử (KHÔNG cần): nft -c -f <tệp>.
+# Nạp thật = thay đổi host ERP production => chỉ qua cai-incus.sh với --xac-nhan-rui-ro-erp-production.
+
+table inet zeus_cach_ly {
+    chain forward {
+        type filter hook forward priority filter - 10; policy accept;
+
+        ct state established,related accept
+
+        # ---- Danh sách trắng giữa các bridge ---------------------------------
+        # Worker (br-agent) chỉ nói với Worker API của zeus-core.
+        iifname "br-agent" ip daddr 10.90.30.10 tcp dport 8080 ct state new accept comment "agent -> zeus-core Worker API"
+        # w-ops (br-ops) -> zeus-core. (SSH vào host qua jump có approval: KHÔNG mở ở đây.)
+        iifname "br-ops" ip daddr 10.90.30.10 tcp dport 8080 ct state new accept comment "ops -> zeus-core"
+        # Ingress ở br-dmz chỉ tới zeus-core (proxy chỉ chuyển /hooks/*).
+        iifname "br-dmz" ip daddr 10.90.30.10 tcp dport 8080 ct state new accept comment "dmz -> zeus-core /hooks/*"
+        # erp-staging <-> zeus-core (adapter Odoo) và <- w-code-1/2 qua cổng Odoo.
+        iifname "br-erp-test" ip daddr 10.90.30.10 ct state new accept comment "erp-staging -> zeus-core"
+        iifname "br-core" ip daddr 10.90.20.11 tcp dport { 8069, 8072 } ct state new accept comment "zeus-core -> erp-staging Odoo"
+        iifname "br-agent" ip saddr { 10.90.10.21, 10.90.10.22 } ip daddr 10.90.20.11 tcp dport 8069 ct state new accept comment "w-code -> erp-staging Odoo"
+
+        # ---- Mọi thứ còn lại giữa các mạng nội bộ 10.90.0.0/16: chặn --------
+        iifname { "br-core", "br-agent", "br-ops", "br-erp-test", "br-dmz" } ip daddr 10.90.0.0/16 counter drop comment "bridge -> bridge ngoài danh sách trắng"
+
+        # TUỲ CHỌN: không cho bất kỳ bridge nào chạm LAN công ty (sửa dải cho đúng, rồi bỏ #).
+        # iifname { "br-agent", "br-ops", "br-erp-test", "br-dmz" } ip daddr 192.168.0.0/16 counter drop comment "bridge -> LAN"
+    }
+
+    chain input {
+        type filter hook input priority filter - 10; policy accept;
+
+        ct state established,related accept
+
+        # Duy nhất: zeus-core gọi ERP production trên host (JSON-2, user bot quyền tối thiểu).
+        iifname "br-core" ip saddr 10.90.30.10 tcp dport 8069 ct state new accept comment "zeus-core -> ERP production"
+
+        # Mọi bridge chỉ được DHCP + DNS + ping của host.
+        iifname { "br-core", "br-agent", "br-ops", "br-erp-test", "br-dmz" } udp dport { 53, 67 } accept
+        iifname { "br-core", "br-agent", "br-ops", "br-erp-test", "br-dmz" } tcp dport 53 accept
+        iifname { "br-core", "br-agent", "br-ops", "br-erp-test", "br-dmz" } icmp type echo-request accept
+        iifname { "br-core", "br-agent", "br-ops", "br-erp-test", "br-dmz" } counter drop comment "bridge -> host: chặn"
+    }
+}

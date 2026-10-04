@@ -1,0 +1,23 @@
+# may/zeus-edge.yaml — Container. Dùng: tao-may.sh tao zeus-edge (bảng instance: docs/architecture mục 4).
+# Ghim: nhân E = CPU logic 16-31, P-thread 14-15 cho zeus-gpu; nhân P 0-13 dành cho host + ERP production.
+description: "zeus-edge: Reverse proxy ingress chỉ /hooks/* (TLS), không secret nghiệp vụ"
+config:
+  limits.cpu: "28-29"
+  limits.memory: 1GiB
+  limits.cpu.allowance: 25%   # dùng chung nhân 28-29 với w-ops
+devices:
+  eth0:
+    type: nic
+    network: br-dmz
+    name: eth0
+    ipv4.address: 10.90.50.10
+  eth1:
+    type: nic
+    network: br-core
+    name: eth1
+    ipv4.address: 10.90.30.30   # chỉ để tới zeus-core:/hooks/*
+  root:
+    type: disk
+    pool: may-ao
+    path: /
+    size: 10GiB

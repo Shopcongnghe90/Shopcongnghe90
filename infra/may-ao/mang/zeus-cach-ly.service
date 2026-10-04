@@ -1,0 +1,18 @@
+# /etc/systemd/system/zeus-cach-ly.service
+# Nạp bộ quy tắc nftables đa bridge sau khi Incus khởi động. CHỈ cài qua cai-incus.sh (có cổng rủi ro host).
+[Unit]
+Description=Cách ly mạng đa bridge ZeusVN (nftables) — 8 instance
+Wants=network-pre.target
+After=network-pre.target incus.service
+ConditionPathExists=/etc/zeus/cach-ly-mang.nft
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/sbin/nft delete table inet zeus_cach_ly
+ExecStart=/usr/sbin/nft -f /etc/zeus/cach-ly-mang.nft
+ExecReload=/bin/sh -c '/usr/sbin/nft delete table inet zeus_cach_ly 2>/dev/null; /usr/sbin/nft -f /etc/zeus/cach-ly-mang.nft'
+ExecStop=/usr/sbin/nft delete table inet zeus_cach_ly
+
+[Install]
+WantedBy=multi-user.target
