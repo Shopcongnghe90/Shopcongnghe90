@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, risk %}
+{% block body %}
+{% if error %}<div class="card bad" role="alert">{{ error }}</div>{% endif %}
+{% if result %}<div class="card ok">Đã gửi lệnh (event <code>{{ result.event_id }}</code>){% if result.duplicate %} — trùng lặp, bỏ qua{% endif %}.
+{% if result.task_id %}Task: <a href="{{ prefix }}/workflows/{{ result.task_id }}">{{ result.task_id }}</a>{% endif %}</div>{% endif %}
+<form method="post" action="{{ prefix }}/command" class="card form">
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+  <label>Lệnh / yêu cầu (tiếng Việt)
+    <textarea name="text" rows="5" maxlength="4000" required placeholder="Ví dụ: Sửa lỗi in hoá đơn trên ERP staging và chạy test">{{ text or '' }}</textarea></label>
+  <label>Nhóm công việc (tuỳ chọn)
+    <select name="family"><option value="">Tự nhận diện</option>{% for f in families %}<option value="{{ f }}">{{ f }}</option>{% endfor %}</select></label>
+  <button class="btn" type="submit">Gửi lệnh</button>
+  <p class="muted">Lệnh đi qua Event Gateway → phân loại ý định → đánh giá rủi ro → kế hoạch. Thao tác rủi ro cao vẫn cần duyệt.</p>
+</form>
+{% endblock %}

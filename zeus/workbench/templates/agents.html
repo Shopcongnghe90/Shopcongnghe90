@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, risk %}
+{% block body %}
+<p class="muted">Chỉ số chính: chi phí cho mỗi thành công đã xác minh (cost per verified success). Chỉ tính outcome có bằng chứng mạnh.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Nhóm việc</th><th>Provider / Model</th><th>Số lần</th><th>Thành công xác minh</th><th>Tỉ lệ</th><th>Cost / verified success</th><th>Độ trễ TB</th></tr></thead>
+<tbody>{% for s in stats %}<tr><td>{{ s.task_family|val }}</td><td>{{ s.provider|val }} / {{ s.model }}</td><td>{{ s.n }}</td><td>{{ s.verified_success }}</td>
+<td>{{ '%.0f%%' % (s.success_rate * 100) }}</td><td>{{ s.cost_per_verified_success|usd }}</td><td>{{ ((s.total_latency_ms / s.n)|int ~ ' ms') if s.n else '—' }}</td></tr>
+{% else %}<tr><td colspan="7" class="muted">Chưa có số liệu.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

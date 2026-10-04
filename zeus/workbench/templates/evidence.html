@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, risk %}
+{% block body %}
+<div class="tablewrap"><table>
+<thead><tr><th>Task</th><th>Kết quả</th><th>Model</th><th>Chi phí</th><th>Độ trễ</th><th>Lúc</th></tr></thead>
+<tbody>{% for e in records %}<tr><td><a href="{{ prefix }}/evidence/{{ e.task_id }}">{{ e.goal }}</a></td><td>{{ badge(e.final_outcome) }}</td><td>{{ e.model_name or '—' }}</td><td>{{ e.cost_usd|usd }}</td><td>{{ e.latency_ms }} ms</td><td>{{ e.created_at|dt }}</td></tr>
+{% else %}<tr><td colspan="6" class="muted">Chưa có bằng chứng.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

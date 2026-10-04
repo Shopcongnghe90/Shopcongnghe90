@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, risk %}
+{% block body %}
+<div class="card"><strong>{{ task.goal }}</strong><br>
+  {{ badge(task.status) }} {{ risk(task.risk) }} <span class="muted">· {{ task.family|val }} · workflow: {{ task.workflow_id or '—' }} · {{ task.created_at|dt }}</span>
+  {% if task.acceptance_criteria %}<ul>{% for c in task.acceptance_criteria %}<li>{{ c }}</li>{% endfor %}</ul>{% endif %}
+</div>
+<h2>Task Graph</h2>
+{% if dag %}
+<div class="dag">
+<svg viewBox="0 0 {{ dag.width }} {{ dag.height }}" width="{{ dag.width }}" height="{{ dag.height }}" role="img" aria-label="Sơ đồ task graph">
+  {% for e in dag.edges %}<path class="edge" d="{{ e.path }}"></path>{% endfor %}
+  {% for n in dag.nodes %}
+  <g class="node st-{{ n.status }}" transform="translate({{ n.x }},{{ n.y }})">
+    <rect width="{{ dag.node_w }}" height="{{ dag.node_h }}" rx="8"></rect>
+    <text x="10" y="21" class="nt">{{ n.title[:22] }}{{ '…' if n.title|length > 22 else '' }}</text>
+    <text x="10" y="40" class="ns">{{ n.status|vi }} · {{ n.risk }}</text>
+    <title>{{ n.title }}</title>
+  </g>
+  {% endfor %}
+</svg>
+</div>
+{% else %}<p class="muted">Chưa có kế hoạch (task graph) cho task này.</p>{% endif %}
+<h2>Bằng chứng</h2>
+{% for e in evidence %}<div class="card">{{ badge(e.final_outcome) }} <span class="muted">{{ e.created_at|dt }} · {{ e.cost_usd|usd }} · {{ e.latency_ms }} ms</span></div>
+{% else %}<p class="muted">Chưa có bằng chứng.</p>{% endfor %}
+{% endblock %}

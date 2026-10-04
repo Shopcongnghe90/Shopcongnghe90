@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, risk %}
+{% block body %}
+<h2>Task thất bại / đã rollback ({{ failed|length }})</h2>
+<div class="tablewrap"><table><thead><tr><th>Mục tiêu</th><th>Trạng thái</th><th>Lúc</th></tr></thead>
+<tbody>{% for t in failed %}<tr><td><a href="{{ prefix }}/workflows/{{ t.task_id }}">{{ t.goal }}</a></td><td>{{ badge(t.status) }}</td><td>{{ t.created_at|dt }}</td></tr>
+{% else %}<tr><td colspan="3" class="muted">Không có.</td></tr>{% endfor %}</tbody></table></div>
+<h2>Có retry ({{ retried|length }})</h2>
+<div class="tablewrap"><table><thead><tr><th>Task</th><th>Số retry</th><th>Kết quả</th></tr></thead>
+<tbody>{% for e in retried %}<tr><td><a href="{{ prefix }}/evidence/{{ e.task_id }}">{{ e.goal }}</a></td><td>{{ e.retries }}</td><td>{{ badge(e.final_outcome) }}</td></tr>
+{% else %}<tr><td colspan="3" class="muted">Không có.</td></tr>{% endfor %}</tbody></table></div>
+<h2>Đã rollback ({{ rolled|length }})</h2>
+<div class="tablewrap"><table><thead><tr><th>Task</th><th>Tham chiếu rollback</th></tr></thead>
+<tbody>{% for e in rolled %}<tr><td><a href="{{ prefix }}/evidence/{{ e.task_id }}">{{ e.goal }}</a></td><td>{{ e.rollback_ref or '—' }}</td></tr>
+{% else %}<tr><td colspan="2" class="muted">Không có.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}

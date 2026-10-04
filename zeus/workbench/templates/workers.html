@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, risk %}
+{% block body %}
+<div class="tablewrap"><table>
+<thead><tr><th>Worker</th><th>Loại</th><th>Trạng thái</th><th>Heartbeat</th><th>CPU rảnh</th><th>RAM rảnh</th><th>Hàng đợi</th><th>Lỗi gần đây</th></tr></thead>
+<tbody>{% for r in rows %}<tr class="{{ 'stale' if r.stale else '' }}">
+<td>{{ r.w.worker_id }}<div class="muted">{{ r.w.inventory.hostname }} · {{ r.w.network_zone }}</div></td><td>{{ r.w.kind|val }}</td><td>{{ badge(r.w.status) }}</td>
+<td>{% if r.hb %}{{ r.age_s }} giây trước{% if r.stale %} <span class="badge s-OFFLINE">mất tín hiệu</span>{% endif %}{% else %}—{% endif %}</td>
+<td>{{ ('%.0f%%' % r.hb.cpu_available_pct) if r.hb else '—' }}</td><td>{{ (r.hb.ram_available_mb ~ ' MB') if r.hb else '—' }}</td><td>{{ r.hb.queue_depth if r.hb else '—' }}</td>
+<td>{{ ('%.0f%%' % (r.hb.recent_error_rate * 100)) if r.hb else '—' }}</td></tr>
+{% else %}<tr><td colspan="8" class="muted">Chưa có worker nào đăng ký.</td></tr>{% endfor %}</tbody></table></div>
+{% endblock %}
