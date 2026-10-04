@@ -35,7 +35,7 @@ def test_discover_rejects_bad_names(tmp_path: Path):
 @pytest.mark.pg
 def test_apply_core_idempotent_and_append_only(pg_dsn: str):
     applied = apply_migrations(pg_dsn, REPO_MIGRATIONS)
-    assert [m.version for m in applied] == [0]
+    assert [m.version for m in applied] == [m.version for m in discover_migrations(REPO_MIGRATIONS)]
     assert apply_migrations(pg_dsn, REPO_MIGRATIONS) == []
     assert all(r["state"] == "applied" for r in migration_status(pg_dsn, REPO_MIGRATIONS))
     with psycopg.connect(pg_dsn, autocommit=True) as conn:
